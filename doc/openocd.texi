@@ -5627,6 +5627,60 @@ The @var{num} parameter is a value shown by @command{flash banks}.
 @end deffn
 @end deffn
 
+@deffn {Flash Driver} stm32l4x
+All members of the STM32L4 microcontroller series from ST Microelectronics
+include internal flash and use ARM Cortex-M4 cores.
+The driver automatically recognizes a number of these chips using
+the chip identification register, and autoconfigures itself.
+
+@example
+flash bank $_FLASHNAME stm32l4x 0x08000000 0x40000 0 0 $_TARGETNAME
+@end example
+
+Some stm32l4x-specific commands are defined:
+
+@deffn Command {stm32lx mass_erase} num
+Mass erases the entire stm32l4x device.
+The @var{num} parameter is a value shown by @command{flash banks}.
+@end deffn
+@end deffn
+
+@deffn {Flash Driver} stm32l4x
+All members of the STM32L4 microcontroller series from ST Microelectronics
+include internal flash and use ARM Cortex-M4 cores.
+The driver automatically recognizes a number of these chips using
+the chip identification register, and autoconfigures itself.
+
+@example
+flash bank $_FLASHNAME stm32l4x 0x08000000 0x40000 0 0 $_TARGETNAME
+@end example
+
+Some stm32l4x-specific commands are defined:
+
+@deffn Command {stm32lx mass_erase} num
+Mass erases the entire stm32l4x device.
+The @var{num} parameter is a value shown by @command{flash banks}.
+@end deffn
+@end deffn
+
+@deffn {Flash Driver} stm32l4x
+All members of the STM32L4 microcontroller series from ST Microelectronics
+include internal flash and use ARM Cortex-M4 cores.
+The driver automatically recognizes a number of these chips using
+the chip identification register, and autoconfigures itself.
+
+@example
+flash bank $_FLASHNAME stm32l4x 0x08000000 0x40000 0 0 $_TARGETNAME
+@end example
+
+Some stm32l4x-specific commands are defined:
+
+@deffn Command {stm32lx mass_erase} num
+Mass erases the entire stm32l4x device.
+The @var{num} parameter is a value shown by @command{flash banks}.
+@end deffn
+@end deffn
+
 @deffn {Flash Driver} str7x
 All members of the STR7 microcontroller family from ST Microelectronics
 include internal flash and use ARM7TDMI cores.

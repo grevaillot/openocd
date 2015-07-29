@@ -1145,9 +1145,15 @@ int cortex_m_set_breakpoint(struct target *target, struct breakpoint *breakpoint
 			return ERROR_FAIL;
 		}
 		breakpoint->set = fp_num + 1;
-		hilo = (breakpoint->address & 0x2) ? FPCR_REPLACE_BKPT_HIGH : FPCR_REPLACE_BKPT_LOW;
 		comparator_list[fp_num].used = 1;
+
+		if (cortex_m->cortex_m7) {
+			comparator_list[fp_num].fpcr_value = breakpoint->address | 1;
+		} else {
+		hilo = (breakpoint->address & 0x2) ? FPCR_REPLACE_BKPT_HIGH : FPCR_REPLACE_BKPT_LOW;
 		comparator_list[fp_num].fpcr_value = (breakpoint->address & 0x1FFFFFFC) | hilo | 1;
+		}
+
 		target_write_u32(target, comparator_list[fp_num].fpcr_address,
 			comparator_list[fp_num].fpcr_value);
 		LOG_DEBUG("fpc_num %i fpcr_value 0x%" PRIx32 "",
@@ -1868,11 +1874,26 @@ static void cortex_m_dwt_free(struct target *target)
 	cm->dwt_cache = NULL;
 }
 
+/*
+  Reference :
+  http://infocenter.arm.com/help/topic/com.arm.doc.ddi0489c/DDI0489C_cortex_m7_trm.pdf
+  chapiter 8.3, FPU programmers model
+*/
+/*
+   The cortex m7 come with three option : without FPH, Simple Precision FPU,
+   Double Precision. The value for simple precision is the same than cortex m4
+   The FPU version for cortex m7 are FPUv5_SP, FPUv5_DP.
+*/
 #define MVFR0 0xe000ef40
 #define MVFR1 0xe000ef44
 
-#define MVFR0_DEFAULT_M4 0x10110021
-#define MVFR1_DEFAULT_M4 0x11000011
+#define MVFR0_DEFAULT_M4  MVFR0_SIMPLE_M7
+#define MVFR0_SIMPLE_M7   0x10110021
+#define MVFR0_DOUBLE_M7   0x10110221
+
+#define MVFR1_DEFAULT_M4  MVFR1_SIMPLE_M7
+#define MVFR1_SIMPLE_M7   0x11000011
+#define MVFR1_DOUBLE_M7   0x12000011
 
 int cortex_m_examine(struct target *target)
 {
@@ -1906,8 +1927,21 @@ int cortex_m_examine(struct target *target)
 				i, (uint8_t)((cpuid >> 20) & 0xf), (uint8_t)((cpuid >> 0) & 0xf));
 		LOG_DEBUG("cpuid: 0x%8.8" PRIx32 "", cpuid);
 
+
+		/* test for floating point feature on cortex-m7 */
+		if (i == 7) {
+			target_read_u32(target, MVFR0, &mvfr0);
+			target_read_u32(target, MVFR1, &mvfr1);
+
+			if ((mvfr0 == MVFR0_SIMPLE_M7) && (mvfr1 == MVFR1_SIMPLE_M7)) {
+				LOG_DEBUG("Cortex-M%d floating point feature FPv5_SP found", i);
+				armv7m->fp_feature = FPv5_SP;
+			} else if ((mvfr0 == MVFR0_DOUBLE_M7) && (mvfr1 == MVFR1_DOUBLE_M7)) {
+				LOG_DEBUG("Cortex-M%d floating point feature FPv5_DP found", i);
+				armv7m->fp_feature = FPv5_DP;
+			}
+		} else if (i == 4) {
 		/* test for floating point feature on cortex-m4 */
-		if (i == 4) {
 			target_read_u32(target, MVFR0, &mvfr0);
 			target_read_u32(target, MVFR1, &mvfr1);
 
@@ -1920,7 +1954,9 @@ int cortex_m_examine(struct target *target)
 			armv7m->arm.is_armv6m = true;
 		}
 
-		if (armv7m->fp_feature != FPv4_SP &&
+		if ((armv7m->fp_feature != FPv4_SP &&
+		     armv7m->fp_feature != FPv5_SP &&
+		     armv7m->fp_feature != FPv5_DP) &&
 		    armv7m->arm.core_cache->num_regs > ARMV7M_NUM_CORE_REGS_NOFP) {
 			/* free unavailable FPU registers */
 			size_t idx;
@@ -1931,10 +1967,15 @@ int cortex_m_examine(struct target *target)
 			armv7m->arm.core_cache->num_regs = ARMV7M_NUM_CORE_REGS_NOFP;
 		}
 
-		if (i == 4 || i == 3) {
+		if (i == 4 || i == 3 || i == 7) {
 			/* Cortex-M3/M4 has 4096 bytes autoincrement range */
 			armv7m->dap.tar_autoincr_block = (1 << 12);
 		}
+
+		if (i == 7)
+			cortex_m->cortex_m7 = 1;
+		else
+			cortex_m->cortex_m7 = 0;
 
 		/* Configure trace modules */
 		retval = target_write_u32(target, DCB_DEMCR, TRCENA | armv7m->demcr);

@@ -172,6 +172,7 @@ struct cortex_m_common {
 	uint32_t nvic_icsr;  /* Interrupt Control State Register - shows active and pending IRQ */
 
 	/* Flash Patch and Breakpoint (FPB) */
+	int cortex_m7;
 	int fp_num_lit;
 	int fp_num_code;
 	int fp_code_available;

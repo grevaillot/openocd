@@ -224,6 +224,7 @@ static int armv7m_read_core_reg(struct target *target, struct reg *r,
 	if ((armv7m_core_reg->num >= ARMV7M_D0) && (armv7m_core_reg->num <= ARMV7M_D15)) {
 		/* map D0..D15 to S0..S31 */
 		size_t regidx = ARMV7M_S0 + 2 * (armv7m_core_reg->num - ARMV7M_D0);
+
 		retval = armv7m->load_core_reg_u32(target, regidx, &reg_value);
 		if (retval != ERROR_OK)
 			return retval;

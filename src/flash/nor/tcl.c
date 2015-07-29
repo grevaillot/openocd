@@ -435,6 +435,7 @@ COMMAND_HANDLER(handle_flash_fill_command)
 	int err = ERROR_OK;
 	uint32_t address;
 	uint32_t pattern;
+	uint64_t pattern64;
 	uint32_t count;
 	uint32_t wrote = 0;
 	uint32_t cur_size = 0;
@@ -453,7 +454,12 @@ COMMAND_HANDLER(handle_flash_fill_command)
 	}
 
 	COMMAND_PARSE_NUMBER(u32, CMD_ARGV[0], address);
-	COMMAND_PARSE_NUMBER(u32, CMD_ARGV[1], pattern);
+
+	if (CMD_NAME[4] == 'd')
+		COMMAND_PARSE_NUMBER(u64, CMD_ARGV[1], pattern64);
+	else
+		COMMAND_PARSE_NUMBER(u32, CMD_ARGV[1], pattern);
+
 	COMMAND_PARSE_NUMBER(u32, CMD_ARGV[2], count);
 
 	chunk = malloc(chunksize);
@@ -470,6 +476,9 @@ COMMAND_HANDLER(handle_flash_fill_command)
 		goto done;
 
 	switch (CMD_NAME[4]) {
+		case 'd':
+			wordsize = 8;
+			break;
 		case 'w':
 			wordsize = 4;
 			break;
@@ -486,6 +495,10 @@ COMMAND_HANDLER(handle_flash_fill_command)
 
 	chunk_count = MIN(count, (chunksize / wordsize));
 	switch (wordsize) {
+		case 8:
+			for (i = 0; i < chunk_count; i++)
+				target_buffer_set_u64(target, chunk + i * wordsize, pattern64);
+			break;
 		case 4:
 			for (i = 0; i < chunk_count; i++)
 				target_buffer_set_u32(target, chunk + i * wordsize, pattern);
