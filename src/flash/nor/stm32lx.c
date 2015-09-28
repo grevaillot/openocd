@@ -144,9 +144,6 @@ static const struct stm32lx_rev stm32_417_revs[] = {
 static const struct stm32lx_rev stm32_425_revs[] = {
 	{ 0x1000, "A" }, { 0x2000, "B" },
 };
-static const struct stm32lx_rev stm32_425_revs[] = {
-	{ 0x1000, "A" },
-};
 static const struct stm32lx_rev stm32_427_revs[] = {
 	{ 0x1000, "A" }, { 0x1018, "Y" }, { 0x1038, "X" },
 };
@@ -157,9 +154,6 @@ static const struct stm32lx_rev stm32_436_revs[] = {
 	{ 0x1000, "A" }, { 0x1008, "Z" }, { 0x1018, "Y" },
 };
 static const struct stm32lx_rev stm32_437_revs[] = {
-	{ 0x1000, "A" },
-};
-static const struct stm32lx_rev stm32_447_revs[] = {
 	{ 0x1000, "A" },
 };
 static const struct stm32lx_rev stm32_447_revs[] = {
