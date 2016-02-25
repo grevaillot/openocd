@@ -1967,9 +1967,19 @@ int cortex_m_examine(struct target *target)
 			armv7m->arm.core_cache->num_regs = ARMV7M_NUM_CORE_REGS_NOFP;
 		}
 
-		if (i == 4 || i == 3 || i == 7) {
+		cortex_m->cortex_m7 = 0;
+		if (i == 4 || i == 3) {
 			/* Cortex-M3/M4 has 4096 bytes autoincrement range */
 			armv7m->dap.tar_autoincr_block = (1 << 12);
+		} else if (i == 7) {
+		  	/* 
+			   The Cortex-M7 has only 1024 bytes auto increment range,
+			   the vendor can add more capabilities but in general 
+			   it is 1024. Maybe one day, the implementation of the  
+			   cortex_m.c will be a little vendor dependent.
+			*/
+			armv7m->dap.tar_autoincr_block = (1 << 10);
+			cortex_m->cortex_m7 = 1;
 		}
 
 		if (i == 7)
