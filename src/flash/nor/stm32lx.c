@@ -177,18 +177,6 @@ static const struct stm32lx_part_info stm32lx_parts[] = {
 		.fsize_base			= 0x1FF8004C,
 	},
 	{
-		.id					= 0x425,
-		.revs				= stm32_425_revs,
-		.num_revs			= ARRAY_SIZE(stm32_425_revs),
-		.device_str			= "STM32L0xx (Cat.2)",
-		.page_size			= 128,
-		.pages_per_sector	= 32,
-		.max_flash_size_kb	= 32,
-		.has_dual_banks		= false,
-		.flash_base			= 0x40022000,
-		.fsize_base			= 0x1FF8007C,
-	},
-	{
 		.id					= 0x427,
 		.revs				= stm32_427_revs,
 		.num_revs			= ARRAY_SIZE(stm32_427_revs),
@@ -238,19 +226,6 @@ static const struct stm32lx_part_info stm32lx_parts[] = {
 		.has_dual_banks		= true,
 		.flash_base			= 0x40023C00,
 		.fsize_base			= 0x1FF800CC,
-	},
-	{
-		.id					= 0x447,
-		.revs				= stm32_447_revs,
-		.num_revs			= ARRAY_SIZE(stm32_447_revs),
-		.device_str			= "STM32L0xx (Cat.5)",
-		.page_size			= 128,
-		.pages_per_sector	= 32,
-		.max_flash_size_kb	= 192,
-		.first_bank_size_kb	= 96,
-		.has_dual_banks		= true,
-		.flash_base			= 0x40022000,
-		.fsize_base			= 0x1FF8007C,
 	},
 	{
 		.id					= 0x457,
@@ -423,7 +398,7 @@ static int stm32lx_write_half_pages(struct flash_bank *bank, const uint8_t *buff
 	struct stm32lx_flash_bank *stm32lx_info = bank->driver_priv;
 
 	uint32_t hp_nb = stm32lx_info->part_info->page_size / 2;
-	uint32_t buffer_size = stm32lx_info->part_info->page_size*8;
+	uint32_t buffer_size = 16384;
 	struct working_area *write_algorithm;
 	struct working_area *source;
 	uint32_t address = bank->base + offset;
@@ -433,7 +408,7 @@ static int stm32lx_write_half_pages(struct flash_bank *bank, const uint8_t *buff
 
 	int retval = ERROR_OK;
 
-	/* see contrib/loaders/flash/stm32lx.S for src */
+	/* see contib/loaders/flash/stm32lx.S for src */
 
 	static const uint8_t stm32lx_flash_write_code[] = {
 		/* write_word: */
@@ -450,6 +425,7 @@ static int stm32lx_write_half_pages(struct flash_bank *bank, const uint8_t *buff
 		0xf8, 0xd3,             /* bcc write_word */
 		0x00, 0xbe,             /* bkpt 0 */
 	};
+
 	/* Make sure we're performing a half-page aligned write. */
 	if (count % hp_nb) {
 		LOG_ERROR("The byte count must be %" PRIu32 "B-aligned but count is %" PRIi32 "B)", hp_nb, count);
