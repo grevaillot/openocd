@@ -134,11 +134,36 @@ struct stlink_usb_handle_s {
 
 #define STLINK_DEBUG_ERR_OK            0x80
 #define STLINK_DEBUG_ERR_FAULT         0x81
+
+#define STLINK_JTAG_SPI_ERROR                    0x02
+#define STLINK_JTAG_DMA_ERROR                    0x03
+#define STLINK_JTAG_UNKNOWN_JTAG_CHAIN           0x04
+#define STLINK_JTAG_NO_DEVICE_CONNECTED          0x05
+#define STLINK_JTAG_INTERNAL_ERROR               0x06
+#define STLINK_JTAG_CMD_WAIT                     0x07
+#define STLINK_JTAG_CMD_ERROR                    0x08
+#define STLINK_JTAG_GET_IDCODE_ERROR             0x09
+#define STLINK_JTAG_ALIGNMENT_ERROR              0x0A
+#define STLINK_JTAG_DBG_POWER_ERROR              0x0B
+#define STLINK_JTAG_WRITE_ERROR                  0x0C
+#define STLINK_JTAG_WRITE_VERIF_ERROR            0x0D
+#define STLINK_JTAG_ALREADY_OPENED_IN_OTHER_MODE 0x0E // New from V2J24
+
 #define STLINK_SWD_AP_WAIT             0x10
 #define STLINK_SWD_AP_FAULT            0x11
-#define STLINK_JTAG_WRITE_ERROR        0x0c
-#define STLINK_JTAG_WRITE_VERIF_ERROR  0x0d
+#define STLINK_SWD_AP_ERROR            0x12
+#define STLINK_SWD_AP_PARITY_ERROR     0x13
 #define STLINK_SWD_DP_WAIT             0x14
+#define STLINK_SWD_DP_FAULT            0x15
+#define STLINK_SWD_DP_ERROR            0x16
+#define STLINK_SWD_DP_PARITY_ERROR     0x17
+#define STLINK_SWD_AP_WDATA_ERROR      0x18
+#define STLINK_SWD_AP_STICKY_ERROR     0x19 // No more specific to SWD from V2J24
+#define STLINK_SWD_AP_STICKYORUN_ERROR 0x1A // No more specific to SWD from V2J24
+#define STLINK_AP_ALREADY_USED         0x1B
+#define STLINK_TRACE_AP_TURNAROUND     0x1C
+#define STLINK_BAD_AP                  0x1D
+
 
 #define STLINK_CORE_RUNNING            0x80
 #define STLINK_CORE_HALTED             0x81
@@ -387,21 +412,87 @@ static int stlink_usb_error_check(void *handle)
 		case STLINK_DEBUG_ERR_FAULT:
 			LOG_DEBUG("SWD fault response (0x%x)", STLINK_DEBUG_ERR_FAULT);
 			return ERROR_FAIL;
+		case STLINK_JTAG_SPI_ERROR:
+			LOG_DEBUG("JTAG_INTERNAL_ERROR (SPI)");
+			return ERROR_FAIL;
+		case STLINK_JTAG_DMA_ERROR:
+			LOG_DEBUG("JTAG_INTERNAL_ERROR (DMA)");
+			return ERROR_FAIL;
+		case STLINK_JTAG_UNKNOWN_JTAG_CHAIN:
+			LOG_DEBUG("UNKNOWN_JTAG_CHAIN");
+			return ERROR_FAIL;
+		case STLINK_JTAG_NO_DEVICE_CONNECTED:
+			LOG_DEBUG("NO_DEVICE_CONNECTED");
+			return ERROR_FAIL;
+		case STLINK_JTAG_INTERNAL_ERROR:
+			LOG_DEBUG("JTAG_INTERNAL_ERROR");
+			return ERROR_FAIL;
+		case STLINK_JTAG_CMD_WAIT:
+			LOG_DEBUG("wait status STLINK_JTAG_CMD_WAIT (0x%x)", STLINK_JTAG_CMD_WAIT);
+			return ERROR_WAIT;
+		case STLINK_JTAG_CMD_ERROR:
+			LOG_DEBUG("JTAG_CMD_ERROR");
+			return ERROR_FAIL;
+		case STLINK_JTAG_GET_IDCODE_ERROR:
+			LOG_DEBUG("JTAG_GET_IDCODE_ERROR");
+			return ERROR_FAIL;
+		case STLINK_JTAG_ALIGNMENT_ERROR:
+			LOG_DEBUG("JTAG_ALIGNMENT_ERROR");
+			return ERROR_FAIL;
+		case STLINK_JTAG_DBG_POWER_ERROR:
+			LOG_DEBUG("JTAG_DBG_POWER_ERROR");
+			return ERROR_FAIL;
+		case STLINK_JTAG_WRITE_ERROR:
+			LOG_DEBUG("Jtag write error");
+			return ERROR_FAIL;
+		case STLINK_JTAG_WRITE_VERIF_ERROR:
+			LOG_DEBUG("Jtag verify error");
+			return ERROR_FAIL;
+		case STLINK_JTAG_ALREADY_OPENED_IN_OTHER_MODE:
+			LOG_DEBUG("JTAG_ALREADY_OPENED_IN_OTHER_MODE");
+			return ERROR_FAIL;
 		case STLINK_SWD_AP_WAIT:
 			LOG_DEBUG("wait status SWD_AP_WAIT (0x%x)", STLINK_SWD_AP_WAIT);
 			return ERROR_WAIT;
-		case STLINK_SWD_DP_WAIT:
-			LOG_DEBUG("wait status SWD_DP_WAIT (0x%x)", STLINK_SWD_AP_WAIT);
-			return ERROR_WAIT;
-		case STLINK_JTAG_WRITE_ERROR:
-			LOG_DEBUG("Write error");
-			return ERROR_FAIL;
-		case STLINK_JTAG_WRITE_VERIF_ERROR:
-			LOG_DEBUG("Verify error");
-			return ERROR_FAIL;
 		case STLINK_SWD_AP_FAULT:
-			LOG_DEBUG("STLINK_SWD_AP_FAULT");
+			LOG_DEBUG("SWD_AP_FAULT");
 			return ERROR_OK;
+		case STLINK_SWD_AP_ERROR:
+			LOG_DEBUG("SWD_AP_ERROR");
+			return ERROR_FAIL;
+		case STLINK_SWD_AP_PARITY_ERROR:
+			LOG_DEBUG("SWD_AP_PARITY_ERROR");
+			return ERROR_FAIL;
+		case STLINK_SWD_DP_WAIT:
+			LOG_DEBUG("wait status SWD_DP_WAIT (0x%x)", STLINK_SWD_DP_WAIT);
+			return ERROR_WAIT;
+		case STLINK_SWD_DP_FAULT:
+			LOG_DEBUG("SWD_DP_FAULT");
+			return ERROR_FAIL;
+		case STLINK_SWD_DP_ERROR:
+			LOG_DEBUG("SWD_DP_ERROR");
+			return ERROR_FAIL;
+		case STLINK_SWD_DP_PARITY_ERROR:
+			LOG_DEBUG("SWD_DP_PARITY_ERROR");
+			return ERROR_FAIL;
+		case STLINK_SWD_AP_WDATA_ERROR:
+			LOG_DEBUG("SWD_AP_WDATA_ERROR");
+			return ERROR_FAIL;
+		case STLINK_SWD_AP_STICKY_ERROR:
+			LOG_DEBUG("SWD_AP_STICKY_ERROR");
+			return ERROR_FAIL;
+		case STLINK_SWD_AP_STICKYORUN_ERROR:
+			LOG_DEBUG("SWD_AP_STICKYORUN_ERROR");
+			return ERROR_FAIL;
+		case STLINK_AP_ALREADY_USED:
+			LOG_DEBUG("AP_ALREADY_USED");
+			return ERROR_FAIL;
+		case STLINK_TRACE_AP_TURNAROUND:
+			LOG_DEBUG("TRACE_AP_TURNAROUND");
+			return ERROR_FAIL;
+		case STLINK_BAD_AP:
+			LOG_DEBUG("BAD_AP");
+			return ERROR_FAIL;
 		default:
 			LOG_DEBUG("unknown/unexpected STLINK status code 0x%x", h->databuf[0]);
 			return ERROR_FAIL;
