@@ -634,6 +634,12 @@ int flash_write_unlock(struct target *target, struct image *image,
 			 * flash programming could fail due to alignment issues
 			 * attempt to rebuild a consecutive buffer for the flash loader */
 			pad_bytes = (sections[section_last + 1]->base_address) - (run_address + run_size);
+
+			if (c->erase_padded_zone) {
+                          LOG_INFO("Erase the padded zone before the write");
+                          flash_erase_address_range(target, true, (run_address + run_size), pad_bytes );
+                          }
+
 			padding[section_last] = pad_bytes;
 			run_size += sections[++section_last]->size;
 			run_size += pad_bytes;

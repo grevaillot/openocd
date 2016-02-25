@@ -91,6 +91,10 @@ struct flash_bank {
 	 * erased value. Defaults to 0xFF. */
 	uint8_t default_padded_value;
 
+  	/* some flash control have ECC code, the padding zone must be erased
+	 * before its writting  
+	 */
+	bool erase_padded_zone;
 	/**
 	 * The number of sectors on this chip.  This value will
 	 * be set intially to 0, and the flash driver must set this to
