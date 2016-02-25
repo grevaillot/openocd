@@ -22,55 +22,42 @@
 
 /*
  * To reduce testing complexity and dangers of regressions,
- * a seperate file is used for stm32F7xx series.
+ * a separate file is used for stm32F7xx series. The sector size 
+ * is twice larger than F2/F4
  */
 
 /* Erase time can be as high as 1000ms, 10x this and it's toast... */
 #define FLASH_ERASE_TIMEOUT 10000
 #define FLASH_WRITE_TIMEOUT 5
 
-/* rm 0351 */
-#define FLASH_ACR	0x00
+/* RM 0385 & RM 0410 */
 #define FLASH_KEYR	0x04
 #define FLASH_OPTKEYR	0x08
 #define FLASH_SR	0x0C
 #define FLASH_CR	0x10
 #define FLASH_OPTR      0x14
-#define FLASH_OPTCR1	0x18
-
-/* FLASH_ACR bits */
-#define FLASH_ACR__LATENCY		(1<<0)
-#define FLASH_ACR__ARTEN		(1<<9)
-#define FLASH_ACR__ARTRST		(1<<11)
 
 /* FLASH_CR register bits */
 #define FLASH_PG       (1 << 0)
 #define FLASH_SER      (1 << 1)
 #define FLASH_MER      (1 << 2)
-#define FLASH_PSNB     (1 << 3)
-#define FLASH_PSIZE    (1 << 8)
+#define FLASH_MER2     (1 << 15)
 #define FLASH_START    (1 << 16)
-#define FLASH_EOPIE    (1 << 24)
-#define FLASH_ERRIE    (1 << 25)
 #define FLASH_LOCK     (1 << 31)
 
 #define FLASH_PSIZE_8  (0 << 8)
-#define FLASH_PSIZE_16 (1 << 8)
 #define FLASH_PSIZE_32 (2 << 8)
-#define FLASH_PSIZE_64 (3 << 8)
 
 #define FLASH_SNB(a)   ((((a) >= 12) ? 0x10 | ((a) - 12) : (a)) << 3)
 
-
 /* FLASH_SR register bits */
-#define FLASH_BSY      (1 << 16) /* Operation in progres */
+#define FLASH_BSY      (1 << 16) /* Operation in progress */
 #define FLASH_PGSERR   (1 << 7) /* Programming sequence error */
 #define FLASH_PGPERR   (1 << 6) /* Programming parallelism error */
 #define FLASH_PGAERR   (1 << 5) /* Programming alignment error */
 #define FLASH_WRPERR   (1 << 4) /* Write protection error */
 #define FLASH_PROGERR  (1 << 3)  /* Write protection error */
 #define FLASH_OPERR    (1 << 1) /* Operation error */
-#define FLASH_EOP      (1 << 0)  /* End of operation */
 
 #define FLASH_ERROR (FLASH_PROGERR | FLASH_PGSERR | FLASH_PGPERR | FLASH_PGAERR | FLASH_WRPERR | FLASH_OPERR)
 
@@ -84,6 +71,7 @@
 #define OPT_RDWDGSW    2
 #define OPT_RDRSTSTOP  3
 #define OPT_RDRSTSTDBY 4
+#define OPT_RDDUALBANK 5
 
 /* register unlock keys */
 #define KEY1           0x45670123
@@ -96,12 +84,11 @@
 /* option bytes */
 #define OPTION_BYTES_ADDRESS 0x1FFC000
 
-#define OPTION_BYTE_0_PR1 0x015500AA
-#define OPTION_BYTE_0_PR0 0x01FF0011
+#define IDWG_SW    (1 << 5)
+#define WWWG_SW    (1 << 4)
 
 #define DBGMCU_IDCODE_REGISTER 0xE0042000
 #define FLASH_BANK0_ADDRESS 0x08000000
-
 #define FLASH_BASE 0x40023C00
 
 
@@ -112,8 +99,11 @@ struct stm32f7x_rev {
 
 struct stm32x_options {
 	uint8_t RDP;
-	uint8_t user_options;
 	uint32_t protection;
+	uint8_t user_options;
+	uint8_t user2_options;
+	uint8_t window_watchdog_selection;
+	uint8_t independent_watchdog_selection;
 };
 
 struct stm32f7x_part_info {
@@ -124,6 +114,7 @@ struct stm32f7x_part_info {
 	unsigned int page_size;
 	unsigned int pages_per_sector;
 	uint16_t max_flash_size_kb;
+	uint8_t has_dual_bank;
 	uint16_t user_bank_size;
 	uint32_t flash_base;	/* Flash controller registers location */
 	uint32_t fsize_base;	/* Location of FSIZE register */
@@ -142,15 +133,31 @@ static const struct stm32f7x_rev stm32_449_revs[] = {
 	{ 0x1000, "A" }, { 0x1001, "Z" },
 };
 
+static const struct stm32f7x_rev stm32_451_revs[] = {
+	{ 0x1000, "A" },
+};
+
+
 static const struct stm32f7x_part_info stm32f7x_parts[] = {
 	{
 	  .id				= 0x449,
 	  .revs				= stm32_449_revs,
 	  .num_revs			= ARRAY_SIZE(stm32_449_revs),
-	  .device_str			= "STM32F7xx 1M",
+		.device_str			= "STM32F74/F75xx 1M",
 	  .page_size			= 256,  /* 256 KB */
-	  .pages_per_sector		= 256,
 	  .max_flash_size_kb		= 1024,
+		.has_dual_bank		= 0,
+		.flash_base			= 0x40023C00,
+		.fsize_base			= 0x1FF0F442,
+	},
+	{
+		.id					= 0x451,
+		.revs				= stm32_451_revs,
+		.num_revs			= ARRAY_SIZE(stm32_451_revs),
+		.device_str			= "STM32F76/F77xx 2M",
+		.page_size			= 256,  /* 256 KB */
+		.max_flash_size_kb	= 2048,
+		.has_dual_bank		= 1,
 	  .flash_base			= 0x40023C00,
 	  .fsize_base			= 0x1FF0F442,
 	},
@@ -311,9 +318,21 @@ static int stm32x_read_options(struct flash_bank *bank)
 	if (retval != ERROR_OK)
 		return retval;
 
-	stm32x_info->option_bytes.user_options = optiondata & 0xec;
+	/* decode option data */
+	stm32x_info->option_bytes.user_options = optiondata & 0xfc;
 	stm32x_info->option_bytes.RDP = (optiondata >> 8) & 0xff;
 	stm32x_info->option_bytes.protection = (optiondata >> 16) & 0xfff;
+	stm32x_info->option_bytes.user2_options = (optiondata >> 24) & 0xf0;
+
+	if (optiondata & IDWG_SW)
+		stm32x_info->option_bytes.independent_watchdog_selection = 1;
+	else
+		stm32x_info->option_bytes.independent_watchdog_selection = 0;
+
+	if (optiondata & WWWG_SW)
+		stm32x_info->option_bytes.window_watchdog_selection = 1;
+	else
+		stm32x_info->option_bytes.window_watchdog_selection = 0;
 
 	if (stm32x_info->option_bytes.RDP != 0xAA)
 		LOG_INFO("Device Security Bit Set");
@@ -335,8 +354,19 @@ static int stm32x_write_options(struct flash_bank *bank)
 
 	/* rebuild option data */
 	optiondata = stm32x_info->option_bytes.user_options;
-	buf_set_u32((uint8_t *)&optiondata, 8, 8, stm32x_info->option_bytes.RDP);
-	buf_set_u32((uint8_t *)&optiondata, 16, 12, stm32x_info->option_bytes.protection);
+	optiondata |= (stm32x_info->option_bytes.RDP << 8);
+	optiondata |= (stm32x_info->option_bytes.protection & 0xfff) << 16;
+	optiondata |= (stm32x_info->option_bytes.user2_options & 0xf0) << 24;
+
+	if (stm32x_info->option_bytes.independent_watchdog_selection)
+		optiondata |= IDWG_SW;
+	else
+		optiondata &= ~IDWG_SW;
+
+	if (stm32x_info->option_bytes.window_watchdog_selection)
+		optiondata |= WWWG_SW;
+	else
+		optiondata &= ~WWWG_SW;
 
 	/* program options */
 	 retval = target_write_u32(target, stm32x_info->flash_base + FLASH_OPTR, optiondata);
@@ -373,10 +403,19 @@ static int stm32x_protect_check(struct flash_bank *bank)
 	}
 
 	for (int i = 0; i < bank->num_sectors; i++) {
+		if (stm32x_info->part_info->has_dual_bank &&
+			((stm32x_info->option_bytes.user2_options & (1 << OPT_RDDUALBANK)) == 0)) {
+			/* double bank */
+			if (stm32x_info->option_bytes.protection & (1 << (i/2)))
+				bank->sectors[i].is_protected = 0;
+			else
+				bank->sectors[i].is_protected = 1;
+		} else {
 		if (stm32x_info->option_bytes.protection & (1 << i))
 			bank->sectors[i].is_protected = 0;
 		else
 			bank->sectors[i].is_protected = 1;
+	}
 	}
 
 	return ERROR_OK;
@@ -388,6 +427,7 @@ static int stm32x_erase(struct flash_bank *bank, int first, int last)
 	struct stm32f7x_flash_bank *stm32x_info = bank->driver_priv;
 	int i;
 	int retval;
+	int offset;
 
 	assert(first < bank->num_sectors);
 	assert(last < bank->num_sectors);
@@ -409,11 +449,22 @@ static int stm32x_erase(struct flash_bank *bank, int first, int last)
 	3. Set the STRT bit in the FLASH_CR register
 	4. Wait for the BSY bit to be cleared
 	 */
-
 	for (i = first; i <= last; i++) {
+		offset = 0;
+		if (stm32x_info->part_info->has_dual_bank && \
+		  ((stm32x_info->option_bytes.user2_options & (1 << OPT_RDDUALBANK)) == 0) && \
+			(bank->size/1024) < stm32x_info->part_info->max_flash_size_kb && \
+			i >= (bank->num_sectors/2)) {
+			/* Dual bank: Hole in sector nb: Bank2 start on sector 12 */
+			offset = 12 - (bank->num_sectors/2);
+			i += offset;
+			LOG_DEBUG("Dual Bank on %dKb part: erase sector %d", bank->size/1024, i);
+		}
+		else
 		LOG_DEBUG("erase sector %d", i);
 		retval = target_write_u32(target,
-				    stm32x_info->flash_base + FLASH_CR, FLASH_SER | FLASH_SNB(i) | FLASH_START);
+					stm32x_info->flash_base + FLASH_CR, 
+					FLASH_SER | FLASH_SNB(i) | FLASH_START | FLASH_PSIZE_32);
 		if (retval != ERROR_OK) {
 			LOG_ERROR("erase sector error %d", i);
 			return retval;
@@ -424,6 +475,9 @@ static int stm32x_erase(struct flash_bank *bank, int first, int last)
 			LOG_ERROR("erase time-out error sector %d", i);
 			return retval;
 		}
+		if (offset)
+			i -= offset;
+
 		bank->sectors[i].is_erased = 1;
 	}
 
@@ -446,8 +500,6 @@ static int stm32x_protect(struct flash_bank *bank, int set, int first, int last)
 		return ERROR_TARGET_NOT_HALTED;
 	}
 
-	LOG_INFO("stm32x_protect, target_*_u32 : error : remote address 0x%x", stm32x_info->flash_base);
-
 	/* read protection settings */
 	int retval = stm32x_read_options(bank);
 	if (retval != ERROR_OK) {
@@ -455,14 +507,27 @@ static int stm32x_protect(struct flash_bank *bank, int set, int first, int last)
 		return retval;
 	}
 
+	if (stm32x_info->part_info->has_dual_bank &&
+		((stm32x_info->option_bytes.user2_options & (1 << OPT_RDDUALBANK))) == 0) {
+		for (int i = first; i <= last; i++) {
+			if (set)
+				stm32x_info->option_bytes.protection &= ~(1 << (i/2));
+			else {
+				LOG_INFO("stm32x_protect : double bank reset %d, %d", i , i/2 );
+				stm32x_info->option_bytes.protection |= (1 << (i/2));
+			}
+		}
+	} else {
+		LOG_INFO("stm32x_protect : mono bank ");
 	for (int i = first; i <= last; i++) {
-
 		if (set)
 			stm32x_info->option_bytes.protection &= ~(1 << i);
 		else
 			stm32x_info->option_bytes.protection |= (1 << i);
 	}
+	}
 
+	LOG_INFO("stm32x_protect, option_bytes written 0x%x", stm32x_info->option_bytes.protection);
 	retval = stm32x_write_options(bank);
 	if (retval != ERROR_OK)
 		return retval;
@@ -638,7 +703,8 @@ static int stm32x_write(struct flash_bank *bank, const uint8_t *buffer,
 	if (retval != ERROR_OK)
 		return retval;
 
-	if (address & 0x3) {
+	if (count < 4) {
+		/* small transfer */
 		retval = target_write_u32(target, stm32x_info->flash_base + FLASH_CR, FLASH_PG | FLASH_PSIZE_8);
 		if (retval != ERROR_OK)
 			return retval;
@@ -684,14 +750,7 @@ static int stm32x_write(struct flash_bank *bank, const uint8_t *buffer,
 	1. Check that no main Flash memory operation is ongoing by checking the BSY bit in the
 	  FLASH_SR register.
 	2. Set the PG bit in the FLASH_CR register
-	3. Perform the data write operation(s) to the desired memory address (inside main
-	  memory block or OTP area):
-	– – Half-word access in case of x16 parallelism
-	– Word access in case of x32 parallelism
-	–
-	4.
-	Byte access in case of x8 parallelism
-	Double word access in case of x64 parallelism
+	3. Byte access 
 	Wait for the BSY bit to be cleared
 	*/
 	if (bytes_remaining) {
@@ -744,13 +803,13 @@ static int stm32x_probe(struct flash_bank *bank)
 
 	stm32x_info->probed = 0;
 
-	int retval = stm32x_read_id_code(bank, &device_id);
+	int retval = stm32x_read_id_code(bank, &stm32x_info->idcode);
 	if (retval != ERROR_OK)
 		return retval;
 
-	stm32x_info->idcode = device_id;
+	LOG_DEBUG("device id = 0x%08" PRIx32 "", stm32x_info->idcode);
 
-	LOG_DEBUG("device id = 0x%08" PRIx32 "", device_id);
+	device_id = stm32x_info->idcode & 0xfff;
 
 	for (unsigned int n = 0; n < ARRAY_SIZE(stm32f7x_parts); n++) {
 		if ((device_id & 0xfff) == stm32f7x_parts[n].id)
@@ -761,9 +820,25 @@ static int stm32x_probe(struct flash_bank *bank)
 		return ERROR_FAIL;
 	}
 
+	/* update the address of controller from data base */
+	stm32x_info->flash_base = stm32x_info->part_info->flash_base;
+
+	/* read the option bytes (dual bank) */
+	retval = stm32x_read_options(bank);
+	if (retval != ERROR_OK) {
+		LOG_DEBUG("unable to read option bytes");
+		return retval;
+	}
+
+	/* if device has Read Protection level 1, flash size register read will fail */
+	if (stm32x_info->option_bytes.RDP != 0xAA)
+		/* force the value to get the max flash size */
+		flash_size_in_kb = 0xffff;
+	else {
 	/* get flash size from target. */
 	retval = target_read_u16(target, stm32x_info->part_info->fsize_base, &flash_size_in_kb);
 	LOG_INFO("flash size probed value %d", flash_size_in_kb);
+	}
 
 	/* if the user sets the size manually then ignore the probed value
 	 * this allows us to work around devices that have a invalid flash size register value */
@@ -779,7 +854,13 @@ static int stm32x_probe(struct flash_bank *bank)
 	assert(flash_size_in_kb != 0xffff);
 
 	/* calculate numbers of pages */
-	int num_pages = (flash_size_in_kb / 256) + 4;
+	int num_pages;
+
+	if (stm32x_info->part_info->has_dual_bank &&
+			((stm32x_info->option_bytes.user2_options & (1 << OPT_RDDUALBANK)) == 0))
+		num_pages = ((flash_size_in_kb / 256) + 4) * 2;
+	else
+		num_pages = (flash_size_in_kb / 256) + 4;
 
 	/* check that calculation result makes sense */
 	assert(num_pages > 0);
@@ -794,12 +875,48 @@ static int stm32x_probe(struct flash_bank *bank)
 	bank->sectors = malloc(sizeof(struct flash_sector) * num_pages);
 	bank->size = 0;
 
+	if (stm32x_info->part_info->has_dual_bank && \
+			((stm32x_info->option_bytes.user2_options & (1 << OPT_RDDUALBANK)) == 0)) {
+		if (flash_size_in_kb < stm32x_info->part_info->max_flash_size_kb) {
+			/* dual bank but lower flash size means a hole between the 2 banks */
+			/* fixed memory */
+			setup_sector(bank, 0, 4, 16 * 1024);
+			setup_sector(bank, 4, 1, 64 * 1024);
+
+			/* dynamic memory */
+			setup_sector(bank, 5, (num_pages/2) - 5, 128 * 1024);
+
+			/* fixed memory */
+			setup_sector(bank, (num_pages/2), 4, 16 * 1024);
+			setup_sector(bank, (num_pages/2)+4, 1, 64 * 1024);
+
+			/* dynamic memory */
+			setup_sector(bank, (num_pages/2)+5, (num_pages/2) - 5, 128 * 1024);
+		}
+		else {
+			/* dual bank organisation */
+			/* fixed memory */
+			setup_sector(bank, 0, 4, 16 * 1024);
+			setup_sector(bank, 4, 1, 64 * 1024);
+
+			/* dynamic memory */
+			setup_sector(bank, 5, MIN(12, num_pages) - 5, 128 * 1024);
+
+			/* fixed memory */
+			setup_sector(bank, 12, 4, 16 * 1024);
+			setup_sector(bank, 16, 1, 64 * 1024);
+
+			/* dynamic memory */
+			setup_sector(bank, 17, num_pages - 5 - 12, 128 * 1024);
+		}
+	} else {
 	/* fixed memory */
 	setup_sector(bank, 0, 4, 32 * 1024);
 	setup_sector(bank, 4, 1, 128 * 1024);
 
 	/* dynamic memory */
-	setup_sector(bank, 4 + 1, MIN(8, num_pages) - 5, 256 * 1024);
+		setup_sector(bank, 5, num_pages - 5, 256 * 1024);
+	}
 
 	for (i = 0; i < num_pages; i++) {
 		bank->sectors[i].is_erased = -1;
@@ -944,6 +1061,7 @@ COMMAND_HANDLER(stm32x_handle_unlock_command)
 static int stm32x_mass_erase(struct flash_bank *bank)
 {
 	int retval;
+	uint32_t FLASH_MER_CMD = FLASH_MER;
 	struct target *target = bank->target;
 	struct stm32f7x_flash_bank *stm32x_info = NULL;
 
@@ -958,12 +1076,17 @@ static int stm32x_mass_erase(struct flash_bank *bank)
 	if (retval != ERROR_OK)
 		return retval;
 
+	if (stm32x_info->part_info->has_dual_bank)
+		FLASH_MER_CMD |= FLASH_MER2;
+
 	/* mass erase flash memory */
-	retval = target_write_u32(target, stm32x_info->flash_base + FLASH_CR, FLASH_MER);
+	retval = target_write_u32(target, stm32x_info->flash_base + FLASH_CR, 
+								FLASH_MER_CMD);
 	if (retval != ERROR_OK)
 		return retval;
+
 	retval = target_write_u32(target, stm32x_info->flash_base + FLASH_CR,
-		FLASH_MER | FLASH_START);
+								FLASH_MER_CMD | FLASH_START);
 	if (retval != ERROR_OK)
 		return retval;
 
