@@ -177,6 +177,18 @@ static const struct stm32lx_part_info stm32lx_parts[] = {
 		.fsize_base			= 0x1FF8004C,
 	},
 	{
+		.id					= 0x417,
+		.revs				= stm32_417_revs,
+		.num_revs			= ARRAY_SIZE(stm32_417_revs),
+		.device_str			= "STM32L0xx",
+		.page_size			= 128,
+		.pages_per_sector	= 32,
+		.max_flash_size_kb	= 64,
+		.has_dual_banks		= false,
+		.flash_base			= 0x40022000,
+		.fsize_base			= 0x1FF8007C,
+	},
+	{
 		.id					= 0x427,
 		.revs				= stm32_427_revs,
 		.num_revs			= ARRAY_SIZE(stm32_427_revs),
