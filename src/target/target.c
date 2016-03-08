@@ -104,6 +104,7 @@ extern struct target_type nds32_v3_target;
 extern struct target_type nds32_v3m_target;
 extern struct target_type or1k_target;
 extern struct target_type quark_x10xx_target;
+extern struct target_type quark_d20xx_target;
 
 static struct target_type *target_types[] = {
 	&arm7tdmi_target,
@@ -133,6 +134,7 @@ static struct target_type *target_types[] = {
 	&nds32_v3m_target,
 	&or1k_target,
 	&quark_x10xx_target,
+	&quark_d20xx_target,
 	NULL,
 };
 
@@ -140,6 +142,7 @@ struct target *all_targets;
 static struct target_event_callback *target_event_callbacks;
 static struct target_timer_callback *target_timer_callbacks;
 LIST_HEAD(target_reset_callback_list);
+LIST_HEAD(target_trace_callback_list);
 static const int polling_interval = 100;
 
 static const Jim_Nvp nvp_assert[] = {
@@ -486,7 +489,7 @@ struct target *get_target(const char *id)
 }
 
 /* returns a pointer to the n-th configured target */
-static struct target *get_target_by_num(int num)
+struct target *get_target_by_num(int num)
 {
 	struct target *target = all_targets;
 
@@ -1021,6 +1024,10 @@ int target_read_memory(struct target *target,
 		LOG_ERROR("Target not examined yet");
 		return ERROR_FAIL;
 	}
+	if (!target->type->read_memory) {
+		LOG_ERROR("Target %s doesn't support read_memory", target_name(target));
+		return ERROR_FAIL;
+	}
 	return target->type->read_memory(target, address, size, count, buffer);
 }
 
@@ -1029,6 +1036,10 @@ int target_read_phys_memory(struct target *target,
 {
 	if (!target_was_examined(target)) {
 		LOG_ERROR("Target not examined yet");
+		return ERROR_FAIL;
+	}
+	if (!target->type->read_phys_memory) {
+		LOG_ERROR("Target %s doesn't support read_phys_memory", target_name(target));
 		return ERROR_FAIL;
 	}
 	return target->type->read_phys_memory(target, address, size, count, buffer);
@@ -1041,6 +1052,10 @@ int target_write_memory(struct target *target,
 		LOG_ERROR("Target not examined yet");
 		return ERROR_FAIL;
 	}
+	if (!target->type->write_memory) {
+		LOG_ERROR("Target %s doesn't support write_memory", target_name(target));
+		return ERROR_FAIL;
+	}
 	return target->type->write_memory(target, address, size, count, buffer);
 }
 
@@ -1049,6 +1064,10 @@ int target_write_phys_memory(struct target *target,
 {
 	if (!target_was_examined(target)) {
 		LOG_ERROR("Target not examined yet");
+		return ERROR_FAIL;
+	}
+	if (!target->type->write_phys_memory) {
+		LOG_ERROR("Target %s doesn't support write_phys_memory", target_name(target));
 		return ERROR_FAIL;
 	}
 	return target->type->write_phys_memory(target, address, size, count, buffer);
@@ -1172,20 +1191,6 @@ static void target_reset_examined(struct target *target)
 	target->examined = false;
 }
 
-static int err_read_phys_memory(struct target *target, uint32_t address,
-		uint32_t size, uint32_t count, uint8_t *buffer)
-{
-	LOG_ERROR("Not implemented: %s", __func__);
-	return ERROR_FAIL;
-}
-
-static int err_write_phys_memory(struct target *target, uint32_t address,
-		uint32_t size, uint32_t count, const uint8_t *buffer)
-{
-	LOG_ERROR("Not implemented: %s", __func__);
-	return ERROR_FAIL;
-}
-
 static int handle_target(void *priv);
 
 static int target_init_one(struct command_context *cmd_ctx,
@@ -1212,16 +1217,6 @@ static int target_init_one(struct command_context *cmd_ctx,
 	 * implement it in stages, but warn if we need to do so.
 	 */
 	if (type->mmu) {
-		if (type->write_phys_memory == NULL) {
-			LOG_ERROR("type '%s' is missing write_phys_memory",
-					type->name);
-			type->write_phys_memory = err_write_phys_memory;
-		}
-		if (type->read_phys_memory == NULL) {
-			LOG_ERROR("type '%s' is missing read_phys_memory",
-					type->name);
-			type->read_phys_memory = err_read_phys_memory;
-		}
 		if (type->virt2phys == NULL) {
 			LOG_ERROR("type '%s' is missing virt2phys", type->name);
 			type->virt2phys = identity_virt2phys;
@@ -1358,6 +1353,28 @@ int target_register_reset_callback(int (*callback)(struct target *target,
 	return ERROR_OK;
 }
 
+int target_register_trace_callback(int (*callback)(struct target *target,
+		size_t len, uint8_t *data, void *priv), void *priv)
+{
+	struct target_trace_callback *entry;
+
+	if (callback == NULL)
+		return ERROR_COMMAND_SYNTAX_ERROR;
+
+	entry = malloc(sizeof(struct target_trace_callback));
+	if (entry == NULL) {
+		LOG_ERROR("error allocating buffer for trace callback entry");
+		return ERROR_COMMAND_SYNTAX_ERROR;
+	}
+
+	entry->callback = callback;
+	entry->priv = priv;
+	list_add(&entry->list, &target_trace_callback_list);
+
+
+	return ERROR_OK;
+}
+
 int target_register_timer_callback(int (*callback)(void *priv), int time_ms, int periodic, void *priv)
 {
 	struct target_timer_callback **callbacks_p = &target_timer_callbacks;
@@ -1435,6 +1452,25 @@ int target_unregister_reset_callback(int (*callback)(struct target *target,
 	return ERROR_OK;
 }
 
+int target_unregister_trace_callback(int (*callback)(struct target *target,
+		size_t len, uint8_t *data, void *priv), void *priv)
+{
+	struct target_trace_callback *entry;
+
+	if (callback == NULL)
+		return ERROR_COMMAND_SYNTAX_ERROR;
+
+	list_for_each_entry(entry, &target_trace_callback_list, list) {
+		if (entry->callback == callback && entry->priv == priv) {
+			list_del(&entry->list);
+			free(entry);
+			break;
+		}
+	}
+
+	return ERROR_OK;
+}
+
 int target_unregister_timer_callback(int (*callback)(void *priv), void *priv)
 {
 	if (callback == NULL)
@@ -1484,6 +1520,16 @@ int target_call_reset_callbacks(struct target *target, enum target_reset_mode re
 
 	list_for_each_entry(callback, &target_reset_callback_list, list)
 		callback->callback(target, reset_mode, callback->priv);
+
+	return ERROR_OK;
+}
+
+int target_call_trace_callbacks(struct target *target, size_t len, uint8_t *data)
+{
+	struct target_trace_callback *callback;
+
+	list_for_each_entry(callback, &target_trace_callback_list, list)
+		callback->callback(target, len, data, callback->priv);
 
 	return ERROR_OK;
 }
@@ -1886,7 +1932,8 @@ int target_arch_state(struct target *target)
 		return ERROR_OK;
 	}
 
-	LOG_USER("target state: %s", target_state_name(target));
+	LOG_USER("%s: target state: %s", target_name(target),
+		 target_state_name(target));
 
 	if (target->state != TARGET_HALTED)
 		return ERROR_OK;
@@ -2522,29 +2569,27 @@ static int handle_target(void *priv)
 					target->backoff.times *= 2;
 					target->backoff.times++;
 				}
-				LOG_USER("Polling target %s failed, GDB will be halted. Polling again in %dms",
-						target_name(target),
-						target->backoff.times * polling_interval);
 
 				/* Tell GDB to halt the debugger. This allows the user to
 				 * run monitor commands to handle the situation.
 				 */
 				target_call_event_callbacks(target, TARGET_EVENT_GDB_HALT);
-				return retval;
 			}
-			/* Since we succeeded, we reset backoff count */
 			if (target->backoff.times > 0) {
-				LOG_USER("Polling target %s succeeded again, trying to reexamine", target_name(target));
+				LOG_USER("Polling target %s failed, trying to reexamine", target_name(target));
 				target_reset_examined(target);
 				retval = target_examine_one(target);
 				/* Target examination could have failed due to unstable connection,
 				 * but we set the examined flag anyway to repoll it later */
 				if (retval != ERROR_OK) {
 					target->examined = true;
+					LOG_USER("Examination failed, GDB will be halted. Polling again in %dms",
+						 target->backoff.times * polling_interval);
 					return retval;
 				}
 			}
 
+			/* Since we succeeded, we reset backoff count */
 			target->backoff.times = 0;
 		}
 	}
@@ -3176,7 +3221,7 @@ COMMAND_HANDLER(handle_load_image_command)
 
 COMMAND_HANDLER(handle_dump_image_command)
 {
-	struct fileio fileio;
+	struct fileio *fileio;
 	uint8_t *buffer;
 	int retval, retvaltemp;
 	uint32_t address, size;
@@ -3209,7 +3254,7 @@ COMMAND_HANDLER(handle_dump_image_command)
 		if (retval != ERROR_OK)
 			break;
 
-		retval = fileio_write(&fileio, this_run_size, buffer, &size_written);
+		retval = fileio_write(fileio, this_run_size, buffer, &size_written);
 		if (retval != ERROR_OK)
 			break;
 
@@ -3220,16 +3265,16 @@ COMMAND_HANDLER(handle_dump_image_command)
 	free(buffer);
 
 	if ((ERROR_OK == retval) && (duration_measure(&bench) == ERROR_OK)) {
-		int filesize;
-		retval = fileio_size(&fileio, &filesize);
+		size_t filesize;
+		retval = fileio_size(fileio, &filesize);
 		if (retval != ERROR_OK)
 			return retval;
 		command_print(CMD_CTX,
-				"dumped %ld bytes in %fs (%0.3f KiB/s)", (long)filesize,
+				"dumped %zu bytes in %fs (%0.3f KiB/s)", filesize,
 				duration_elapsed(&bench), duration_kbps(&bench, filesize));
 	}
 
-	retvaltemp = fileio_close(&fileio);
+	retvaltemp = fileio_close(fileio);
 	if (retvaltemp != ERROR_OK)
 		return retvaltemp;
 
@@ -5141,7 +5186,6 @@ static int target_create(Jim_GetOptInfo *goi)
 	Jim_Obj *new_cmd;
 	Jim_Cmd *cmd;
 	const char *cp;
-	char *cp2;
 	int e;
 	int x;
 	struct target *target;
@@ -5166,10 +5210,9 @@ static int target_create(Jim_GetOptInfo *goi)
 	}
 
 	/* TYPE */
-	e = Jim_GetOpt_String(goi, &cp2, NULL);
+	e = Jim_GetOpt_String(goi, &cp, NULL);
 	if (e != JIM_OK)
 		return e;
-	cp = cp2;
 	struct transport *tr = get_current_transport();
 	if (tr->override_target) {
 		e = tr->override_target(&cp);

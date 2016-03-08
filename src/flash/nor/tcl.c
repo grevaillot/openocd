@@ -562,7 +562,7 @@ COMMAND_HANDLER(handle_flash_write_bank_command)
 {
 	uint32_t offset;
 	uint8_t *buffer;
-	struct fileio fileio;
+	struct fileio *fileio;
 
 	if (CMD_ARGC != 3)
 		return ERROR_COMMAND_SYNTAX_ERROR;
@@ -580,23 +580,23 @@ COMMAND_HANDLER(handle_flash_write_bank_command)
 	if (fileio_open(&fileio, CMD_ARGV[1], FILEIO_READ, FILEIO_BINARY) != ERROR_OK)
 		return ERROR_OK;
 
-	int filesize;
-	retval = fileio_size(&fileio, &filesize);
+	size_t filesize;
+	retval = fileio_size(fileio, &filesize);
 	if (retval != ERROR_OK) {
-		fileio_close(&fileio);
+		fileio_close(fileio);
 		return retval;
 	}
 
 	buffer = malloc(filesize);
 	if (buffer == NULL) {
-		fileio_close(&fileio);
+		fileio_close(fileio);
 		LOG_ERROR("Out of memory");
 		return ERROR_FAIL;
 	}
 	size_t buf_cnt;
-	if (fileio_read(&fileio, filesize, buffer, &buf_cnt) != ERROR_OK) {
+	if (fileio_read(fileio, filesize, buffer, &buf_cnt) != ERROR_OK) {
 		free(buffer);
-		fileio_close(&fileio);
+		fileio_close(fileio);
 		return ERROR_OK;
 	}
 
@@ -606,13 +606,13 @@ COMMAND_HANDLER(handle_flash_write_bank_command)
 	buffer = NULL;
 
 	if ((ERROR_OK == retval) && (duration_measure(&bench) == ERROR_OK)) {
-		command_print(CMD_CTX, "wrote %ld bytes from file %s to flash bank %u"
+		command_print(CMD_CTX, "wrote %zu bytes from file %s to flash bank %u"
 			" at offset 0x%8.8" PRIx32 " in %fs (%0.3f KiB/s)",
-			(long)filesize, CMD_ARGV[1], p->bank_number, offset,
+			filesize, CMD_ARGV[1], p->bank_number, offset,
 			duration_elapsed(&bench), duration_kbps(&bench, filesize));
 	}
 
-	fileio_close(&fileio);
+	fileio_close(fileio);
 
 	return retval;
 }
@@ -621,7 +621,7 @@ COMMAND_HANDLER(handle_flash_read_bank_command)
 {
 	uint32_t offset;
 	uint8_t *buffer;
-	struct fileio fileio;
+	struct fileio *fileio;
 	uint32_t length;
 	size_t written;
 
@@ -659,8 +659,8 @@ COMMAND_HANDLER(handle_flash_read_bank_command)
 		return retval;
 	}
 
-	retval = fileio_write(&fileio, length, buffer, &written);
-	fileio_close(&fileio);
+	retval = fileio_write(fileio, length, buffer, &written);
+	fileio_close(fileio);
 	free(buffer);
 	if (retval != ERROR_OK) {
 		LOG_ERROR("Could not write file");
@@ -681,9 +681,9 @@ COMMAND_HANDLER(handle_flash_verify_bank_command)
 {
 	uint32_t offset;
 	uint8_t *buffer_file, *buffer_flash;
-	struct fileio fileio;
+	struct fileio *fileio;
 	size_t read_cnt;
-	int filesize;
+	size_t filesize;
 	int differ;
 
 	if (CMD_ARGC != 3)
@@ -705,28 +705,28 @@ COMMAND_HANDLER(handle_flash_verify_bank_command)
 		return retval;
 	}
 
-	retval = fileio_size(&fileio, &filesize);
+	retval = fileio_size(fileio, &filesize);
 	if (retval != ERROR_OK) {
-		fileio_close(&fileio);
+		fileio_close(fileio);
 		return retval;
 	}
 
 	buffer_file = malloc(filesize);
 	if (buffer_file == NULL) {
 		LOG_ERROR("Out of memory");
-		fileio_close(&fileio);
+		fileio_close(fileio);
 		return ERROR_FAIL;
 	}
 
-	retval = fileio_read(&fileio, filesize, buffer_file, &read_cnt);
-	fileio_close(&fileio);
+	retval = fileio_read(fileio, filesize, buffer_file, &read_cnt);
+	fileio_close(fileio);
 	if (retval != ERROR_OK) {
 		LOG_ERROR("File read failure");
 		free(buffer_file);
 		return retval;
 	}
 
-	if ((int)read_cnt != filesize) {
+	if (read_cnt != filesize) {
 		LOG_ERROR("Short read");
 		free(buffer_file);
 		return ERROR_FAIL;

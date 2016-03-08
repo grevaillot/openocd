@@ -86,11 +86,13 @@
 #include "mpsse.h"
 
 #define JTAG_MODE (LSB_FIRST | POS_EDGE_IN | NEG_EDGE_OUT)
+#define JTAG_MODE_ALT (LSB_FIRST | NEG_EDGE_IN | NEG_EDGE_OUT)
 #define SWD_MODE (LSB_FIRST | POS_EDGE_IN | NEG_EDGE_OUT)
 
 static char *ftdi_device_desc;
 static char *ftdi_serial;
 static uint8_t ftdi_channel;
+static uint8_t ftdi_jtag_mode = JTAG_MODE;
 
 static bool swd_mode;
 
@@ -128,7 +130,7 @@ static uint16_t direction;
 static uint16_t jtag_output_init;
 static uint16_t jtag_direction_init;
 
-static int ftdi_swd_switch_seq(struct adiv5_dap *dap, enum swd_special_seq seq);
+static int ftdi_swd_switch_seq(enum swd_special_seq seq);
 
 static struct signal *find_signal_by_name(const char *name)
 {
@@ -244,7 +246,7 @@ static void move_to_state(tap_state_t goal_state)
 		0,
 		tms_count,
 		false,
-		JTAG_MODE);
+		ftdi_jtag_mode);
 }
 
 static int ftdi_speed(int speed)
@@ -257,6 +259,9 @@ static int ftdi_speed(int speed)
 		return retval;
 	}
 
+	if (!swd_mode && speed >= 10000000 && ftdi_jtag_mode != JTAG_MODE_ALT)
+		LOG_INFO("ftdi: if you experience problems at higher adapter clocks, try "
+			 "the command \"ftdi_tdo_sample_edge falling\"");
 	return ERROR_OK;
 }
 
@@ -304,7 +309,7 @@ static void ftdi_execute_runtest(struct jtag_command *cmd)
 	while (i > 0) {
 		/* there are no state transitions in this code, so omit state tracking */
 		unsigned this_len = i > 7 ? 7 : i;
-		mpsse_clock_tms_cs_out(mpsse_ctx, &zero, 0, this_len, false, JTAG_MODE);
+		mpsse_clock_tms_cs_out(mpsse_ctx, &zero, 0, this_len, false, ftdi_jtag_mode);
 		i -= this_len;
 	}
 
@@ -344,7 +349,7 @@ static void ftdi_execute_tms(struct jtag_command *cmd)
 		0,
 		cmd->cmd.tms->num_bits,
 		false,
-		JTAG_MODE);
+		ftdi_jtag_mode);
 }
 
 static void ftdi_execute_pathmove(struct jtag_command *cmd)
@@ -391,7 +396,7 @@ static void ftdi_execute_pathmove(struct jtag_command *cmd)
 					0,
 					bit_count,
 					false,
-					JTAG_MODE);
+					ftdi_jtag_mode);
 			bit_count = 0;
 		}
 	}
@@ -446,7 +451,7 @@ static void ftdi_execute_scan(struct jtag_command *cmd)
 				field->in_value,
 				0,
 				field->num_bits - 1,
-				JTAG_MODE);
+				ftdi_jtag_mode);
 			uint8_t last_bit = 0;
 			if (field->out_value)
 				bit_copy(&last_bit, 0, field->out_value, field->num_bits - 1, 1);
@@ -458,14 +463,14 @@ static void ftdi_execute_scan(struct jtag_command *cmd)
 					field->num_bits - 1,
 					1,
 					last_bit,
-					JTAG_MODE);
+					ftdi_jtag_mode);
 			tap_set_state(tap_state_transition(tap_get_state(), 1));
 			mpsse_clock_tms_cs_out(mpsse_ctx,
 					&tms_bits,
 					1,
 					1,
 					last_bit,
-					JTAG_MODE);
+					ftdi_jtag_mode);
 			tap_set_state(tap_state_transition(tap_get_state(), 0));
 		} else
 			mpsse_clock_data(mpsse_ctx,
@@ -474,7 +479,7 @@ static void ftdi_execute_scan(struct jtag_command *cmd)
 				field->in_value,
 				0,
 				field->num_bits,
-				JTAG_MODE);
+				ftdi_jtag_mode);
 	}
 
 	if (tap_get_state() != tap_get_end_state())
@@ -553,7 +558,7 @@ static void ftdi_execute_stableclocks(struct jtag_command *cmd)
 	while (num_cycles > 0) {
 		/* there are no state transitions in this code, so omit state tracking */
 		unsigned this_len = num_cycles > 7 ? 7 : num_cycles;
-		mpsse_clock_tms_cs_out(mpsse_ctx, &tms, 0, this_len, false, JTAG_MODE);
+		mpsse_clock_tms_cs_out(mpsse_ctx, &tms, 0, this_len, false, ftdi_jtag_mode);
 		num_cycles -= this_len;
 	}
 
@@ -832,6 +837,29 @@ COMMAND_HANDLER(ftdi_handle_vid_pid_command)
 	return ERROR_OK;
 }
 
+COMMAND_HANDLER(ftdi_handle_tdo_sample_edge_command)
+{
+	Jim_Nvp *n;
+	static const Jim_Nvp nvp_ftdi_jtag_modes[] = {
+		{ .name = "rising", .value = JTAG_MODE },
+		{ .name = "falling", .value = JTAG_MODE_ALT },
+		{ .name = NULL, .value = -1 },
+	};
+
+	if (CMD_ARGC > 0) {
+		n = Jim_Nvp_name2value_simple(nvp_ftdi_jtag_modes, CMD_ARGV[0]);
+		if (n->name == NULL)
+			return ERROR_COMMAND_SYNTAX_ERROR;
+		ftdi_jtag_mode = n->value;
+
+	}
+
+	n = Jim_Nvp_value2name_simple(nvp_ftdi_jtag_modes, ftdi_jtag_mode);
+	command_print(CMD_CTX, "ftdi samples TDO on %s edge of TCK", n->name);
+
+	return ERROR_OK;
+}
+
 static const struct command_registration ftdi_command_handlers[] = {
 	{
 		.name = "ftdi_device_desc",
@@ -883,6 +911,15 @@ static const struct command_registration ftdi_command_handlers[] = {
 		.mode = COMMAND_CONFIG,
 		.help = "the vendor ID and product ID of the FTDI device",
 		.usage = "(vid pid)* ",
+	},
+	{
+		.name = "ftdi_tdo_sample_edge",
+		.handler = &ftdi_handle_tdo_sample_edge_command,
+		.mode = COMMAND_ANY,
+		.help = "set which TCK clock edge is used for sampling TDO "
+			"- default is rising-edge (Setting to falling-edge may "
+			"allow signalling speed increase)",
+		.usage = "(rising|falling)",
 	},
 	COMMAND_REGISTRATION_DONE
 };
@@ -941,7 +978,7 @@ static void ftdi_swd_swdio_en(bool enable)
  * @param dap
  * @return
  */
-static int ftdi_swd_run_queue(struct adiv5_dap *dap)
+static int ftdi_swd_run_queue(void)
 {
 	LOG_DEBUG("Executing %zu queued transactions", swd_cmd_queue_length);
 	int retval;
@@ -1008,13 +1045,13 @@ skip:
 	return retval;
 }
 
-static void ftdi_swd_queue_cmd(struct adiv5_dap *dap, uint8_t cmd, uint32_t *dst, uint32_t data)
+static void ftdi_swd_queue_cmd(uint8_t cmd, uint32_t *dst, uint32_t data, uint32_t ap_delay_clk)
 {
 	if (swd_cmd_queue_length >= swd_cmd_queue_alloced) {
 		/* Not enough room in the queue. Run the queue and increase its size for next time.
 		 * Note that it's not possible to avoid running the queue here, because mpsse contains
 		 * pointers into the queue which may be invalid after the realloc. */
-		queued_retval = ftdi_swd_run_queue(dap);
+		queued_retval = ftdi_swd_run_queue();
 		struct swd_cmd_queue_entry *q = realloc(swd_cmd_queue, swd_cmd_queue_alloced * 2 * sizeof(*swd_cmd_queue));
 		if (q != NULL) {
 			swd_cmd_queue = q;
@@ -1057,23 +1094,23 @@ static void ftdi_swd_queue_cmd(struct adiv5_dap *dap, uint8_t cmd, uint32_t *dst
 
 	/* Insert idle cycles after AP accesses to avoid WAIT */
 	if (cmd & SWD_CMD_APnDP)
-		mpsse_clock_data_out(mpsse_ctx, NULL, 0, dap->memaccess_tck, SWD_MODE);
+		mpsse_clock_data_out(mpsse_ctx, NULL, 0, ap_delay_clk, SWD_MODE);
 
 }
 
-static void ftdi_swd_read_reg(struct adiv5_dap *dap, uint8_t cmd, uint32_t *value)
+static void ftdi_swd_read_reg(uint8_t cmd, uint32_t *value, uint32_t ap_delay_clk)
 {
 	assert(cmd & SWD_CMD_RnW);
-	ftdi_swd_queue_cmd(dap, cmd, value, 0);
+	ftdi_swd_queue_cmd(cmd, value, 0, ap_delay_clk);
 }
 
-static void ftdi_swd_write_reg(struct adiv5_dap *dap, uint8_t cmd, uint32_t value)
+static void ftdi_swd_write_reg(uint8_t cmd, uint32_t value, uint32_t ap_delay_clk)
 {
 	assert(!(cmd & SWD_CMD_RnW));
-	ftdi_swd_queue_cmd(dap, cmd, NULL, value);
+	ftdi_swd_queue_cmd(cmd, NULL, value, ap_delay_clk);
 }
 
-static int_least32_t ftdi_swd_frequency(struct adiv5_dap *dap, int_least32_t hz)
+static int_least32_t ftdi_swd_frequency(int_least32_t hz)
 {
 	if (hz > 0)
 		freq = mpsse_set_frequency(mpsse_ctx, hz);
@@ -1081,7 +1118,7 @@ static int_least32_t ftdi_swd_frequency(struct adiv5_dap *dap, int_least32_t hz)
 	return freq;
 }
 
-static int ftdi_swd_switch_seq(struct adiv5_dap *dap, enum swd_special_seq seq)
+static int ftdi_swd_switch_seq(enum swd_special_seq seq)
 {
 	switch (seq) {
 	case LINE_RESET:

@@ -26,8 +26,8 @@
 #endif
 
 #include "configuration.h"
-/* @todo the inclusion of server.h here is a layering violation */
-#include <server/server.h>
+#include "log.h"
+#include "command.h"
 
 #include <getopt.h>
 
@@ -113,6 +113,12 @@ static void add_default_dirs(void)
 			free(path);
 		}
 	}
+
+	path = getenv("OPENOCD_SCRIPTS");
+
+	if (path)
+		add_script_search_dir(path);
+
 #ifdef _WIN32
 	const char *appdata = getenv("APPDATA");
 

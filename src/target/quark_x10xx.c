@@ -1,5 +1,5 @@
 /*
- * Copyright(c) 2013 Intel Corporation.
+ * Copyright(c) 2013-2016 Intel Corporation.
  *
  * Adrian Burns (adrian.burns@intel.com)
  * Thomas Faust (thomas.faust@intel.com)
@@ -8,8 +8,9 @@
  * Jeffrey Maxwell (jeffrey.r.maxwell@intel.com)
  *
  * This program is free software; you can redistribute it and/or modify
- * it under the terms of version 2 of the GNU General Public License as
- * published by the Free Software Foundation.
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation; either version 2 of the License, or
+ * (at your option) any later version.
  *
  * This program is distributed in the hope that it will be useful, but
  * WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -60,6 +61,7 @@ int quark_x10xx_target_create(struct target *t, Jim_Interp *interp)
 	}
 	x86_32_common_init_arch_info(t, x86_32);
 	lakemont_init_arch_info(t, x86_32);
+	x86_32->core_type = LMT1;
 	return ERROR_OK;
 }
 

@@ -1159,6 +1159,9 @@ static int gdb_get_registers_packet(struct connection *connection,
 	assert(reg_packet_size > 0);
 
 	reg_packet = malloc(reg_packet_size + 1); /* plus one for string termination null */
+	if (reg_packet == NULL)
+		return ERROR_FAIL;
+
 	reg_packet_p = reg_packet;
 
 	for (i = 0; i < reg_list_size; i++) {
@@ -3060,7 +3063,7 @@ COMMAND_HANDLER(handle_gdb_save_tdesc_command)
 
 	tdesc_length = strlen(tdesc);
 
-	struct fileio fileio;
+	struct fileio *fileio;
 	size_t size_written;
 
 	char *tdesc_filename = alloc_printf("%s.xml", target_type_name(target));
@@ -3076,9 +3079,9 @@ COMMAND_HANDLER(handle_gdb_save_tdesc_command)
 		goto out;
 	}
 
-	retval = fileio_write(&fileio, tdesc_length, tdesc, &size_written);
+	retval = fileio_write(fileio, tdesc_length, tdesc, &size_written);
 
-	fileio_close(&fileio);
+	fileio_close(fileio);
 
 	if (retval != ERROR_OK)
 		LOG_ERROR("Error while writing the tdesc file");

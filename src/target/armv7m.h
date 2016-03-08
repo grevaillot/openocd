@@ -148,7 +148,9 @@ struct armv7m_common {
 
 	int common_magic;
 	int exception_number;
-	struct adiv5_dap dap;
+
+	/* AP this processor is connected to in the DAP */
+	struct adiv5_ap *debug_ap;
 
 	int fp_feature;
 	uint32_t demcr;
@@ -188,6 +190,8 @@ struct armv7m_algorithm {
 };
 
 struct reg_cache *armv7m_build_reg_cache(struct target *target);
+void armv7m_free_reg_cache(struct target *target);
+
 enum armv7m_mode armv7m_number_to_mode(int number);
 int armv7m_mode_to_number(enum armv7m_mode mode);
 

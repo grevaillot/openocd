@@ -224,7 +224,6 @@ static int armv7m_read_core_reg(struct target *target, struct reg *r,
 	if ((armv7m_core_reg->num >= ARMV7M_D0) && (armv7m_core_reg->num <= ARMV7M_D15)) {
 		/* map D0..D15 to S0..S31 */
 		size_t regidx = ARMV7M_S0 + 2 * (armv7m_core_reg->num - ARMV7M_D0);
-
 		retval = armv7m->load_core_reg_u32(target, regidx, &reg_value);
 		if (retval != ERROR_OK)
 			return retval;
@@ -623,6 +622,34 @@ struct reg_cache *armv7m_build_reg_cache(struct target *target)
 	return cache;
 }
 
+void armv7m_free_reg_cache(struct target *target)
+{
+	struct armv7m_common *armv7m = target_to_armv7m(target);
+	struct arm *arm = &armv7m->arm;
+	struct reg_cache *cache;
+	struct reg *reg;
+	unsigned int i;
+
+	cache = arm->core_cache;
+
+	if (!cache)
+		return;
+
+	for (i = 0; i < cache->num_regs; i++) {
+		reg = &cache->reg_list[i];
+
+		free(reg->feature);
+		free(reg->reg_data_type);
+		free(reg->value);
+	}
+
+	free(cache->reg_list[0].arch_info);
+	free(cache->reg_list);
+	free(cache);
+
+	arm->core_cache = NULL;
+}
+
 static int armv7m_setup_semihosting(struct target *target, int enable)
 {
 	/* nothing todo for armv7m */
@@ -742,16 +769,8 @@ int armv7m_blank_check_memory(struct target *target,
 	struct armv7m_algorithm armv7m_info;
 	int retval;
 
-	/* see contrib/loaders/erase_check/armv7m_erase_check.s for src */
-
 	static const uint8_t erase_check_code[] = {
-		/* loop: */
-		0x03, 0x78,		/* ldrb	r3, [r0] */
-		0x01, 0x30,		/* adds	r0, #1 */
-		0x1A, 0x40,		/* ands	r2, r2, r3 */
-		0x01, 0x39,		/* subs	r1, r1, #1 */
-		0xFA, 0xD1,		/* bne	loop */
-		0x00, 0xBE		/* bkpt	#0 */
+#include "../../contrib/loaders/erase_check/armv7m_erase_check.inc"
 	};
 
 	/* make sure we have a working area */

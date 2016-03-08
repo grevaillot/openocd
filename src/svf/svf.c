@@ -216,13 +216,14 @@ static int svf_read_command_from_file(FILE *fd);
 static int svf_check_tdo(void);
 static int svf_add_check_para(uint8_t enabled, int buffer_offset, int bit_len);
 static int svf_run_command(struct command_context *cmd_ctx, char *cmd_str);
+static int svf_execute_tap(void);
 
 static FILE *svf_fd;
 static char *svf_read_line;
 static size_t svf_read_line_size;
 static char *svf_command_buffer;
 static size_t svf_command_buffer_size;
-static int svf_line_number = 1;
+static int svf_line_number;
 static int svf_getline(char **lineptr, size_t *n, FILE *stream);
 
 #define SVF_MAX_BUFFER_SIZE_TO_COMMIT   (1024 * 1024)
@@ -258,7 +259,7 @@ static void svf_hexbuf_print(int dbg_lvl, const char *file, unsigned line,
 	int msbits = bit_len % 8;
 
 	/* allocate 2 bytes per hex digit */
-	char *prbuf = malloc((byte_len * 2) + 1);
+	char *prbuf = malloc((byte_len * 2) + 2 + 1);
 	if (!prbuf)
 		return;
 
@@ -276,6 +277,9 @@ static void svf_hexbuf_print(int dbg_lvl, const char *file, unsigned line,
 static int svf_realloc_buffers(size_t len)
 {
 	void *ptr;
+
+	if (svf_execute_tap() != ERROR_OK)
+		return ERROR_FAIL;
 
 	ptr = realloc(svf_tdi_buffer, len);
 	if (!ptr)
@@ -374,6 +378,7 @@ COMMAND_HANDLER(handle_svf_command)
 	/* parse command line */
 	svf_quiet = 0;
 	svf_nil = 0;
+	svf_progress_enabled = 0;
 	svf_ignore_error = 0;
 	for (unsigned int i = 0; i < CMD_ARGC; i++) {
 		if (strcmp(CMD_ARGV[i], "-tap") == 0) {
@@ -413,7 +418,7 @@ COMMAND_HANDLER(handle_svf_command)
 	time_measure_ms = timeval_ms();
 
 	/* init */
-	svf_line_number = 1;
+	svf_line_number = 0;
 	svf_command_buffer_size = 0;
 
 	svf_check_tdo_para_index = 0;
@@ -1030,6 +1035,19 @@ XXR_common:
 			}
 			i_tmp = xxr_para_tmp->len;
 			xxr_para_tmp->len = atoi(argus[1]);
+			/* If we are to enlarge the buffers, all parts of xxr_para_tmp
+			 * need to be freed */
+			if (i_tmp < xxr_para_tmp->len) {
+				free(xxr_para_tmp->tdi);
+				xxr_para_tmp->tdi = NULL;
+				free(xxr_para_tmp->tdo);
+				xxr_para_tmp->tdo = NULL;
+				free(xxr_para_tmp->mask);
+				xxr_para_tmp->mask = NULL;
+				free(xxr_para_tmp->smask);
+				xxr_para_tmp->smask = NULL;
+			}
+
 			LOG_DEBUG("\tlength = %d", xxr_para_tmp->len);
 			xxr_para_tmp->data_mask = 0;
 			for (i = 2; i < num_of_argu; i += 2) {

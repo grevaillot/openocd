@@ -1,5 +1,5 @@
 /*
- * Copyright(c) 2013 Intel Corporation.
+ * Copyright(c) 2013-2016 Intel Corporation.
  *
  * Adrian Burns (adrian.burns@intel.com)
  * Thomas Faust (thomas.faust@intel.com)
@@ -8,8 +8,9 @@
  * Jeffrey Maxwell (jeffrey.r.maxwell@intel.com)
  *
  * This program is free software; you can redistribute it and/or modify
- * it under the terms of version 2 of the GNU General Public License as
- * published by the Free Software Foundation.
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation; either version 2 of the License, or
+ * (at your option) any later version.
  *
  * This program is distributed in the hope that it will be useful, but
  * WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -100,5 +101,6 @@ int lakemont_step(struct target *t, int current,
 			uint32_t address, int handle_breakpoints);
 int lakemont_reset_assert(struct target *t);
 int lakemont_reset_deassert(struct target *t);
+int lakemont_update_after_probemode_entry(struct target *t);
 
 #endif /* LAKEMONT_H */

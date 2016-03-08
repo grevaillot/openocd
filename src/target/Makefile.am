@@ -91,6 +91,8 @@ ARM_DEBUG_SRC = \
 	arm_simulator.c \
 	arm_semihosting.c \
 	arm_adi_v5.c \
+	armv7a_cache.c \
+	armv7a_cache_l2x.c \
 	adi_v5_jtag.c \
 	adi_v5_swd.c \
 	embeddedice.c \
@@ -127,6 +129,7 @@ NDS32_SRC = \
 
 INTEL_IA32_SRC = \
 	quark_x10xx.c \
+	quark_d20xx.c \
 	lakemont.c \
 	x86_32_common.c
 
@@ -136,6 +139,8 @@ noinst_HEADERS = \
 	arm_dpm.h \
 	arm_jtag.h \
 	arm_adi_v5.h \
+	armv7a_cache.h \
+	armv7a_cache_l2x.h \
 	arm_disassembler.h \
 	arm_opcodes.h \
 	arm_simulator.h \

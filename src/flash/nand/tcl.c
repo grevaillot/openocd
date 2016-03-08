@@ -341,7 +341,7 @@ COMMAND_HANDLER(handle_nand_verify_command)
 
 COMMAND_HANDLER(handle_nand_dump_command)
 {
-	int filesize;
+	size_t filesize;
 	struct nand_device *nand = NULL;
 	struct nand_fileio_state s;
 	int retval = CALL_COMMAND_HANDLER(nand_fileio_parse_args,
@@ -360,22 +360,22 @@ COMMAND_HANDLER(handle_nand_dump_command)
 		}
 
 		if (NULL != s.page)
-			fileio_write(&s.fileio, s.page_size, s.page, &size_written);
+			fileio_write(s.fileio, s.page_size, s.page, &size_written);
 
 		if (NULL != s.oob)
-			fileio_write(&s.fileio, s.oob_size, s.oob, &size_written);
+			fileio_write(s.fileio, s.oob_size, s.oob, &size_written);
 
 		s.size -= nand->page_size;
 		s.address += nand->page_size;
 	}
 
-	retval = fileio_size(&s.fileio, &filesize);
+	retval = fileio_size(s.fileio, &filesize);
 	if (retval != ERROR_OK)
 		return retval;
 
 	if (nand_fileio_finish(&s) == ERROR_OK) {
-		command_print(CMD_CTX, "dumped %ld bytes in %fs (%0.3f KiB/s)",
-			(long)filesize, duration_elapsed(&s.bench),
+		command_print(CMD_CTX, "dumped %zu bytes in %fs (%0.3f KiB/s)",
+			filesize, duration_elapsed(&s.bench),
 			duration_kbps(&s.bench, filesize));
 	}
 	return ERROR_OK;

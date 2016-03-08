@@ -164,7 +164,6 @@ enum cortex_m_isrmasking_mode {
 
 struct cortex_m_common {
 	int common_magic;
-	struct arm_jtag jtag_info;
 
 	/* Context information */
 	uint32_t dcb_dhcsr;
@@ -172,10 +171,10 @@ struct cortex_m_common {
 	uint32_t nvic_icsr;  /* Interrupt Control State Register - shows active and pending IRQ */
 
 	/* Flash Patch and Breakpoint (FPB) */
-	int cortex_m7;
 	int fp_num_lit;
 	int fp_num_code;
 	int fp_code_available;
+	int fp_rev;
 	int fpb_enabled;
 	int auto_bp_type;
 	struct cortex_m_fp_comparator *fp_comparator_list;
