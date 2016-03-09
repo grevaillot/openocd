@@ -252,19 +252,6 @@ static const struct stm32lx_part_info stm32lx_parts[] = {
 		.fsize_base			= 0x1FF800CC,
 	},
 	{
-		.id					= 0x447,
-		.revs				= stm32_447_revs,
-		.num_revs			= ARRAY_SIZE(stm32_447_revs),
-		.device_str			= "STM32L0xx (Cat.5)",
-		.page_size			= 128,
-		.pages_per_sector	= 32,
-		.max_flash_size_kb	= 192,
-		.first_bank_size_kb	= 128,
-		.has_dual_banks		= true,
-		.flash_base			= 0x40022000,
-		.fsize_base			= 0x1FF8007C,
-	},
-	{
 		.id					= 0x457,
 		.revs				= stm32_457_revs,
 		.num_revs			= ARRAY_SIZE(stm32_457_revs),
@@ -276,6 +263,20 @@ static const struct stm32lx_part_info stm32lx_parts[] = {
 		.flash_base			= 0x40022000,
 		.fsize_base			= 0x1FF8007C,
 	},
+	{
+		.id					= 0x447,
+		.revs				= stm32_447_revs,
+		.num_revs			= ARRAY_SIZE(stm32_447_revs),
+		.device_str			= "STM32L0xx (Cat.5)",
+		.page_size			= 128,
+		.pages_per_sector	= 32,
+		.max_flash_size_kb	= 192,
+		.first_bank_size_kb	= 96,
+		.has_dual_banks		= true,
+		.flash_base			= 0x40022000,
+		.fsize_base			= 0x1FF8007C,
+	},
+
 };
 
 /* flash bank stm32lx <base> <size> 0 0 <target#>
@@ -612,7 +613,7 @@ static int stm32lx_write(struct flash_bank *bank, const uint8_t *buffer,
 		return retval;
 
 	/* first we need to write any unaligned head bytes upto
-	 * the next 128 byte page */
+	 * the next half_page byte page */
 
 	if (offset % hp_nb)
 		bytes_remaining = MIN(count, hp_nb - (offset % hp_nb));

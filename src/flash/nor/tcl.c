@@ -434,7 +434,7 @@ COMMAND_HANDLER(handle_flash_fill_command)
 {
 	int err = ERROR_OK;
 	uint32_t address;
-	uint32_t pattern;
+	uint64_t pattern;
 	uint32_t count;
 	uint32_t wrote = 0;
 	uint32_t cur_size = 0;
@@ -453,7 +453,7 @@ COMMAND_HANDLER(handle_flash_fill_command)
 	}
 
 	COMMAND_PARSE_NUMBER(u32, CMD_ARGV[0], address);
-	COMMAND_PARSE_NUMBER(u32, CMD_ARGV[1], pattern);
+	COMMAND_PARSE_NUMBER(u64, CMD_ARGV[1], pattern);
 	COMMAND_PARSE_NUMBER(u32, CMD_ARGV[2], count);
 
 	chunk = malloc(chunksize);
@@ -470,6 +470,9 @@ COMMAND_HANDLER(handle_flash_fill_command)
 		goto done;
 
 	switch (CMD_NAME[4]) {
+		case 'd':
+			wordsize = 8;
+			break;
 		case 'w':
 			wordsize = 4;
 			break;
@@ -486,6 +489,10 @@ COMMAND_HANDLER(handle_flash_fill_command)
 
 	chunk_count = MIN(count, (chunksize / wordsize));
 	switch (wordsize) {
+		case 8:
+			for (i = 0; i < chunk_count; i++)
+				target_buffer_set_u64(target, chunk + i * wordsize, pattern);
+			break;
 		case 4:
 			for (i = 0; i < chunk_count; i++)
 				target_buffer_set_u32(target, chunk + i * wordsize, pattern);
@@ -799,6 +806,20 @@ COMMAND_HANDLER(handle_flash_padded_value_command)
 	return retval;
 }
 
+COMMAND_HANDLER(handle_flash_erase_padded_zone_command)
+{
+	if (CMD_ARGC != 2)
+		return ERROR_COMMAND_SYNTAX_ERROR;
+
+	struct flash_bank *p;
+
+        p = flash_bank_list();
+
+	COMMAND_PARSE_ENABLE(CMD_ARGV[1], p->erase_padded_zone);
+	command_print(CMD_CTX, "padded zone erase set to %d", p->erase_padded_zone);
+	return 0;
+}
+
 static const struct command_registration flash_exec_command_handlers[] = {
 	{
 		.name = "probe",
@@ -842,6 +863,14 @@ static const struct command_registration flash_exec_command_handlers[] = {
 			"If 'unlock' is specified, then the flash is unprotected "
 			"before erasing.",
 
+	},
+	{
+		.name = "filld",
+		.handler = handle_flash_fill_command,
+		.mode = COMMAND_EXEC,
+		.usage = "address value n",
+		.help = "Fill n words with 64-bit value, starting at "
+			"double word address.  (No autoerase.)",
 	},
 	{
 		.name = "fillw",
@@ -984,6 +1013,7 @@ COMMAND_HANDLER(handle_flash_bank_command)
 	COMMAND_PARSE_NUMBER(int, CMD_ARGV[3], c->chip_width);
 	COMMAND_PARSE_NUMBER(int, CMD_ARGV[4], c->bus_width);
 	c->default_padded_value = 0xff;
+	c->erase_padded_zone = false;
 	c->num_sectors = 0;
 	c->sectors = NULL;
 	c->next = NULL;
@@ -1096,6 +1126,12 @@ static const struct command_registration flash_config_command_handlers[] = {
 		.mode = COMMAND_ANY,
 		.jim_handler = jim_flash_list,
 		.help = "Returns a list of details about the flash banks.",
+	},
+	{
+		.name = "erase_padded_zone",
+		.handler = handle_flash_erase_padded_zone_command,
+		.mode = COMMAND_ANY,
+		.help = "Set the erasing of the padded zone before write",
 	},
 	COMMAND_REGISTRATION_DONE
 };

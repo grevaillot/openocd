@@ -157,6 +157,7 @@ static void close_trace_file(struct armv7m_common *armv7m)
 	armv7m->trace_config.trace_file = NULL;
 }
 
+
 COMMAND_HANDLER(handle_tpiu_config_command)
 {
 	struct target *target = get_current_target(CMD_CTX);
@@ -196,6 +197,7 @@ COMMAND_HANDLER(handle_tpiu_config_command)
 				}
 			}
 		}
+		
 		cmd_idx++;
 		if (CMD_ARGC == cmd_idx)
 			return ERROR_COMMAND_SYNTAX_ERROR;
@@ -248,6 +250,7 @@ COMMAND_HANDLER(handle_tpiu_config_command)
 				return ERROR_OK;
 		}
 	}
+	
 
 	return ERROR_COMMAND_SYNTAX_ERROR;
 }

@@ -37,6 +37,7 @@ NOR_DRIVERS = \
 	stm32f2x.c \
 	stm32lx.c \
 	stm32l4x.c \
+	stm32f7x.c \
 	str7x.c \
 	str9x.c \
 	str9xpec.c \
