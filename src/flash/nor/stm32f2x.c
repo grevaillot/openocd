@@ -152,7 +152,7 @@
 #define OPT_RDRSTSTOP  3
 #define OPT_RDRSTSTDBY 4
 #define OPT_BFB2       5	/* dual flash bank only */
-#define OPT_DB1M       14	/* 1 MiB devices dual flash bank option */
+#define OPT_DB1M       30	/* 1 MiB devices dual flash bank option */
 
 /* register unlock keys */
 
@@ -1005,6 +1005,10 @@ static int get_stm32x_info(struct flash_bank *bank, char *buf, int buf_size)
 		case 0x1001:
 			rev_str = "Z";
 			break;
+
+		case 0x2000:
+			rev_str = "B";
+			break;
 		}
 		break;
 	case 0x434:
@@ -1131,6 +1135,7 @@ COMMAND_HANDLER(stm32x_handle_unlock_command)
 static int stm32x_mass_erase(struct flash_bank *bank)
 {
 	int retval;
+	uint32_t FLASH_MER_CMD = FLASH_MER;
 	struct target *target = bank->target;
 	struct stm32x_flash_bank *stm32x_info = NULL;
 
@@ -1147,13 +1152,14 @@ static int stm32x_mass_erase(struct flash_bank *bank)
 
 	/* mass erase flash memory */
 	if (stm32x_info->has_large_mem)
-		retval = target_write_u32(target, stm32x_get_flash_reg(bank, STM32_FLASH_CR), FLASH_MER | FLASH_MER1);
-	else
-		retval = target_write_u32(target, stm32x_get_flash_reg(bank, STM32_FLASH_CR), FLASH_MER);
+		FLASH_MER_CMD |= FLASH_MER1;
+
+	retval = target_write_u32(target, stm32x_get_flash_reg(bank, STM32_FLASH_CR), FLASH_MER_CMD);
 	if (retval != ERROR_OK)
 		return retval;
+
 	retval = target_write_u32(target, stm32x_get_flash_reg(bank, STM32_FLASH_CR),
-		FLASH_MER | FLASH_STRT);
+		FLASH_MER_CMD | FLASH_STRT);
 	if (retval != ERROR_OK)
 		return retval;
 
