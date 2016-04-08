@@ -128,6 +128,8 @@
 #define FLASH_SNB(a)   ((((a) >= 12) ? 0x10 | ((a) - 12) : (a)) << 3)
 #define FLASH_LOCK     (1 << 31)
 
+#define HOLE_SECTORS   4 /* for dual bank on 1Mo devices */
+
 /* FLASH_SR register bits */
 
 #define FLASH_BSY      (1 << 16)
@@ -172,7 +174,8 @@ struct stm32x_options {
 struct stm32x_flash_bank {
 	struct stm32x_options option_bytes;
 	int probed;
-	bool has_large_mem;		/* stm32f42x/stm32f43x family */
+	bool has_large_mem;		/* stm32f42x/f43x stm32f46x/f47x families */
+	bool has_db1m;			/* stm32f42x/f43x stm32f46x/f47x families */
 	uint32_t user_bank_size;
 };
 
@@ -416,6 +419,7 @@ static int stm32x_protect_check(struct flash_bank *bank)
 static int stm32x_erase(struct flash_bank *bank, int first, int last)
 {
 	struct target *target = bank->target;
+	struct stm32x_flash_bank *stm32x_info = bank->driver_priv;
 	int i;
 
 	assert(first < bank->num_sectors);
@@ -443,7 +447,12 @@ static int stm32x_erase(struct flash_bank *bank, int first, int last)
 	 */
 
 	for (i = first; i <= last; i++) {
-		retval = target_write_u32(target,
+		if (stm32x_info->has_large_mem && stm32x_info->has_db1m && i > 7)
+			/* for dual bank on 1Mo devices, hole of 4 sectors between banks (bk1 sector 0-7, bk2 sector 12-19) */
+			retval = target_write_u32(target,
+				stm32x_get_flash_reg(bank, STM32_FLASH_CR), FLASH_SER | FLASH_SNB(i+HOLE_SECTORS) | FLASH_STRT);
+		else
+			retval = target_write_u32(target,
 				stm32x_get_flash_reg(bank, STM32_FLASH_CR), FLASH_SER | FLASH_SNB(i) | FLASH_STRT);
 		if (retval != ERROR_OK)
 			return retval;
@@ -776,6 +785,7 @@ static int stm32x_probe(struct flash_bank *bank)
 
 	stm32x_info->probed = 0;
 	stm32x_info->has_large_mem = false;
+	stm32x_info->has_db1m = false;
 
 	/* read stm32 device id register */
 	int retval = stm32x_get_device_id(bank, &device_id);
@@ -845,8 +855,8 @@ static int stm32x_probe(struct flash_bank *bank)
 	if (flash_size_in_kb > 1024)
 		stm32x_info->has_large_mem = true;
 
-	/* F42x/43x 1024 kiByte devices have a dual bank option */
-	if ((device_id & 0xfff) == 0x419 && (flash_size_in_kb == 1024)) {
+	/* F42x/43x & F46x/F47x 1024 kiByte devices have a dual bank option */
+	if ( ((device_id & 0xfff) == 0x419 || (device_id & 0xfff) == 0x434) && (flash_size_in_kb == 1024)) {
 		uint32_t optiondata;
 		retval = target_read_u32(target, STM32_FLASH_OPTCR, &optiondata);
 		if (retval != ERROR_OK) {
@@ -855,7 +865,11 @@ static int stm32x_probe(struct flash_bank *bank)
 		}
 		if (optiondata & (1 << OPT_DB1M)) {
 			stm32x_info->has_large_mem = true;
-			LOG_INFO("Dual Bank 1024 kiB STM32F42x/43x found");
+			stm32x_info->has_db1m = true;
+			if ((device_id & 0xfff) == 0x419)
+				LOG_INFO("Dual Bank 1024 kiB STM32F42x/F43x found");
+			if ((device_id & 0xfff) == 0x434)
+				LOG_INFO("Dual Bank 1024 kiB STM32F46x/F47x found");
 		}
 	}
 
@@ -882,10 +896,13 @@ static int stm32x_probe(struct flash_bank *bank)
 
 	if (stm32x_info->has_large_mem) {
 		if (flash_size_in_kb == 1024) {
+			/* hole between banks but declare contiguous sectors to avoid assert(i < bank->num_sectors) issue */
+			/* because only num_pages sectors have been allocated. */
+			/* the flash reading and writing is contiguous, only sector erase needs to set the real sector number */
 			setup_sector(bank,  5, 3, 128 * 1024);
-			setup_sector(bank, 12, 4,  16 * 1024);
-			setup_sector(bank, 16, 1,  64 * 1024);
-			setup_sector(bank, 17, 3, 128 * 1024);
+			setup_sector(bank,  8, 4,  16 * 1024); /* real sector number start at 12, hole managed in 'stm32x_erase' */
+			setup_sector(bank, 12, 1,  64 * 1024); /* real sector number is 16,  hole managed in 'stm32x_erase' */
+			setup_sector(bank, 13, 3, 128 * 1024); /* real sector number start at 17, hole managed in 'stm32x_erase' */
 		} else {
 			setup_sector(bank,  5, 7, 128 * 1024);
 			setup_sector(bank, 12, 4,  16 * 1024);
