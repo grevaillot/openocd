@@ -82,7 +82,7 @@ struct stlink_usb_version {
 	int stlink;
 	/** */
 	int jtag;
-	/** */
+	/** Swim version on v2, Mass Storage + VCP on v2-1 */
 	int swim;
 	/** highest supported jtag api version */
 	enum stlink_jtag_api_version jtag_api_max;
@@ -609,10 +609,11 @@ static int stlink_usb_version(void *handle)
 	else
 		h->version.jtag_api_max = STLINK_JTAG_API_V1;
 
-	LOG_INFO("STLINK v%d JTAG v%d API v%d SWIM v%d VID 0x%04X PID 0x%04X",
+	LOG_INFO("STLINK v%d JTAG v%d API v%d %s v%d VID 0x%04X PID 0x%04X",
 		h->version.stlink,
 		h->version.jtag,
 		(h->version.jtag_api_max == STLINK_JTAG_API_V1) ? 1 : 2,
+		(h->pid == STLINK_V2_1_PID) ? "M" : "SWIM",
 		h->version.swim,
 		h->vid,
 		h->pid);
@@ -1705,8 +1706,9 @@ static int stlink_usb_open(struct hl_interface_param_s *param, void **fd)
 
 	h->transport = param->transport;
 
-	const uint16_t vids[] = { param->vid, 0 };
-	const uint16_t pids[] = { param->pid, 0 };
+	const uint16_t vids[] = { param->vid, param->vid, param->vid, 0 };
+	const uint16_t pids[] = { STLINK_V2_PID, STLINK_V2_1_PID, param->pid, 0 };
+
 	const char *serial = param->serial;
 
 	LOG_DEBUG("transport: %d vid: 0x%04x pid: 0x%04x serial: %s",
@@ -1738,8 +1740,15 @@ static int stlink_usb_open(struct hl_interface_param_s *param, void **fd)
 		/* RX EP is common for all versions */
 		h->rx_ep = STLINK_RX_EP;
 
+		uint16_t pid;
+
+        if (jtag_libusb_get_pid(h->fd, &pid) != ERROR_OK) {
+			LOG_DEBUG("get pid failed");
+			goto error_open;
+		}
+
 		/* wrap version for first read */
-		switch (param->pid) {
+		switch (pid) {
 			case STLINK_V1_PID:
 				h->version.stlink = 1;
 				h->tx_ep = STLINK_TX_EP;

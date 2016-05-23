@@ -236,8 +236,9 @@ int jtag_libusb_choose_interface(struct jtag_libusb_device_handle *devh,
 	return ERROR_FAIL;
 }
 
-int jtag_libusb_get_pid(struct jtag_libusb_device *dev, uint16_t *pid)
+int jtag_libusb_get_pid(struct jtag_libusb_device_handle *devh, uint16_t *pid)
 {
+	struct jtag_libusb_device *dev = jtag_libusb_get_device(devh);
 	struct libusb_device_descriptor dev_desc;
 
 	if (libusb_get_device_descriptor(dev, &dev_desc) == 0) {
