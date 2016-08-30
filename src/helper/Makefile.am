@@ -18,8 +18,9 @@ libhelper_la_SOURCES = \
 	fileio.c \
 	util.c \
 	jep106.c \
-	jim-nvp.c
-
+	jim-nvp.c \
+	unicode.c \
+	unicode.h
 if IOUTIL
 libhelper_la_SOURCES += ioutil.c
 else
