@@ -1797,9 +1797,13 @@ static int stlink_usb_open(struct hl_interface_param_s *param, void **fd)
 	const uint16_t vids[] = { param->vid, param->vid, param->vid, 0 };
 	const uint16_t pids[] = { STLINK_V2_PID, STLINK_V2_1_PID, param->pid, 0 };
 
+	char serial_text[256];
+
+	utf8_to_text((const uint8_t *)param->serial, serial_text, sizeof(serial_text));
+
 	LOG_DEBUG("transport: %d vid: 0x%04x pid: 0x%04x serial: %s",
 			param->transport, param->vid, param->pid,
-			param->serial ? param->serial : "");
+			serial_text);
 
 	/*
 	  On certain host USB configurations(e.g. MacBook Air)
