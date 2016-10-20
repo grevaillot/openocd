@@ -107,22 +107,16 @@
 #define OPTKEY2        0x4C5D6E7F
 
 /* option bytes */
-#define OPTION_BYTES_ADDRESS 0x1FFF7800
-
 #define DUALBANK   (1 << 21)	/* dual flash bank only */
 #define WWWG_SW    (1 << 19)
 #define IWDG_STDBY (1 << 18)
 #define IWDG_STOP  (1 << 17)
 #define IDWG_SW    (1 << 16)
 
-#define FLASH_SECTOR_SIZE 2048
-
 #define DBGMCU_IDCODE_REGISTER	0xE0042000
 #define FLASH_BANK0_ADDRESS 	0x08000000
 
 #define BUFFER_SIZE 16384
-
-#undef NO_OPTIONS
 
 struct stm32l4x_rev {
 	uint16_t rev;
@@ -132,7 +126,6 @@ struct stm32l4x_rev {
 struct stm32x_options {
 	uint32_t user_options;
 	uint8_t RDP;
-	/* new cmd */
 	uint8_t window_watchdog_selection;
 	uint8_t independent_watchdog_standby;
 	uint8_t independent_watchdog_stop;
@@ -155,13 +148,12 @@ struct stm32l4x_part_info {
 	const struct stm32l4x_rev *revs;
 	size_t num_revs;
 	unsigned int page_size;
-	unsigned int pages_per_sector;
 	uint16_t max_flash_size_kb;
 	uint8_t has_dual_bank;
 	uint16_t first_bank_sectors; /* used to convert sector number */
-	uint16_t hole_sectors; /* use to recalculate the real sector number */
-	uint32_t flash_base; /* Flash controller registers location */
-	uint32_t fsize_base; /* Location of FSIZE register */
+	uint16_t hole_sectors;       /* use to recalculate the real sector number */
+	uint32_t flash_base;         /* Flash controller registers location */
+	uint32_t fsize_base;         /* Location of FSIZE register */
 };
 
 struct stm32l4x_flash_bank {
@@ -179,6 +171,10 @@ static const struct stm32l4x_rev stm32_415_revs[] = {
 
 static const struct stm32l4x_rev stm32_435_revs[] = {
 	{ 0x1000, "A" },
+};
+
+static const struct stm32l4x_rev stm32_462_revs[] = {
+	{ 0x1000, "A" }, { 0x2000, "B" },
 };
 
 
@@ -205,6 +201,19 @@ static struct stm32l4x_part_info stm32l4x_parts[] = {
 	  .max_flash_size_kb	= 256,
 	  .has_dual_bank		= 0,
 	  .first_bank_sectors	= 128,
+	  .hole_sectors			= 0,
+	  .flash_base			= 0x40022000,
+	  .fsize_base			= 0x1FFF75E0,
+	},
+	{
+	  .id					= 0x462,
+	  .revs					= stm32_462_revs,
+	  .num_revs				= ARRAY_SIZE(stm32_462_revs),
+	  .device_str			= "STM32L45/L46xx", /* 512K */
+	  .page_size			= 2048,
+	  .max_flash_size_kb	= 512,
+	  .has_dual_bank		= 0,
+	  .first_bank_sectors	= 256,
 	  .hole_sectors			= 0,
 	  .flash_base			= 0x40022000,
 	  .fsize_base			= 0x1FFF75E0,
@@ -351,10 +360,8 @@ static int stm32x_unlock_option_reg(struct flash_bank *bank)
 static int stm32x_read_options(struct flash_bank *bank)
 {
 	uint32_t optiondata;
-	struct stm32l4x_flash_bank *stm32x_info = NULL;
+	struct stm32l4x_flash_bank *stm32x_info = bank->driver_priv;
 	struct target *target = bank->target;
-
-	stm32x_info = bank->driver_priv;
 
 	/* read current option bytes */
 	int retval = target_read_u32(target, stm32x_info->flash_base + FLASH_OPTR, &optiondata);
@@ -390,7 +397,7 @@ static int stm32x_read_options(struct flash_bank *bank)
 		return retval;
 	stm32x_info->option_bytes.wpr1a_start =  optiondata         & 0xff;
 	stm32x_info->option_bytes.wpr1a_end   = (optiondata >> 16)  & 0xff;
-	
+
 	retval = target_read_u32(target, stm32x_info->flash_base + FLASH_WRP1BR, &optiondata);
 	if (retval != ERROR_OK)
 		return retval;
@@ -422,11 +429,9 @@ static int stm32x_read_options(struct flash_bank *bank)
 
 static int stm32x_write_options(struct flash_bank *bank)
 {
-	struct stm32l4x_flash_bank *stm32x_info = NULL;
+	struct stm32l4x_flash_bank *stm32x_info = bank->driver_priv;
 	struct target *target = bank->target;
 	uint32_t optiondata;
-
-	stm32x_info = bank->driver_priv;
 
 	int retval = stm32x_unlock_reg(bank);
 	if (ERROR_OK != retval)
@@ -459,12 +464,36 @@ static int stm32x_write_options(struct flash_bank *bank)
 	else
 		optiondata &= ~IDWG_SW;
 
-	/* program options registers */
+	/* write options registers */
 	retval = target_write_u32(target, stm32x_info->flash_base + FLASH_OPTR, optiondata);
+	if (retval != ERROR_OK)
+		return retval;
+
+	/* write wrp options */
+	optiondata = (stm32x_info->option_bytes.wpr1a_end << 16) | stm32x_info->option_bytes.wpr1a_start;
+	retval = target_write_u32(target, stm32x_info->flash_base + FLASH_WRP1AR, optiondata);
+	if (retval != ERROR_OK)
+		return retval;
+
+	optiondata = (stm32x_info->option_bytes.wpr1b_end << 16) | stm32x_info->option_bytes.wpr1b_start;
+	retval = target_write_u32(target, stm32x_info->flash_base + FLASH_WRP1BR, optiondata);
+	if (retval != ERROR_OK)
+		return retval;
+
+	/* write wrp options for double bank devices */
+	if (stm32x_info->part_info->has_dual_bank) {
+		optiondata = (stm32x_info->option_bytes.wpr2a_end << 16) | stm32x_info->option_bytes.wpr2a_start;
+		retval = target_write_u32(target, stm32x_info->flash_base + FLASH_WRP2AR, optiondata);
 		if (retval != ERROR_OK)
 			return retval;
 
-	/* fixme: Add WRPxx and PCROPxx registers write */
+		optiondata = (stm32x_info->option_bytes.wpr2b_end << 16) | stm32x_info->option_bytes.wpr2b_start;
+		retval = target_write_u32(target, stm32x_info->flash_base + FLASH_WRP2BR, optiondata);
+		if (retval != ERROR_OK)
+			return retval;
+	}
+
+	/* fixme: Add PCROPxx registers write */
 
 	/* start options programming cycle */
 	retval = target_write_u32(target, stm32x_info->flash_base + FLASH_CR, FLASH_OPTSTRT);
@@ -487,6 +516,7 @@ static int stm32x_write_options(struct flash_bank *bank)
 static int stm32x_protect_check(struct flash_bank *bank)
 {
 	struct stm32l4x_flash_bank *stm32x_info = bank->driver_priv;
+	const struct stm32l4x_part_info *l4_part_info = stm32x_info->part_info;
 
 	/* read 'write protection' settings */
 	int retval = stm32x_read_options(bank);
@@ -495,15 +525,25 @@ static int stm32x_protect_check(struct flash_bank *bank)
 		return retval;
 	}
 
-	/* fixme: should check bank2 also (if boot from bank2 option active?) */
 	for (int i = 0; i < bank->num_sectors; i++) {
-		if ((bank->sectors[i].offset > stm32x_info->option_bytes.wpr1a_start &&
-			bank->sectors[i].offset <= stm32x_info->option_bytes.wpr1a_end) ||
-			(bank->sectors[i].offset > stm32x_info->option_bytes.wpr1b_start &&
-			bank->sectors[i].offset <= stm32x_info->option_bytes.wpr1b_end))
-			bank->sectors[i].is_protected = 1;
-	    else
-			bank->sectors[i].is_protected = 0;
+		if (i < l4_part_info->first_bank_sectors) {
+			if ((i >= stm32x_info->option_bytes.wpr1a_start &&
+				 i <= stm32x_info->option_bytes.wpr1a_end) ||
+				(i >= stm32x_info->option_bytes.wpr1b_start &&
+				 i <= stm32x_info->option_bytes.wpr1b_end))
+				bank->sectors[i].is_protected = 1;
+			else
+				bank->sectors[i].is_protected = 0;
+		}
+		else {
+			if (((i - l4_part_info->first_bank_sectors) >= stm32x_info->option_bytes.wpr2a_start &&
+				 (i - l4_part_info->first_bank_sectors) <= stm32x_info->option_bytes.wpr2a_end) ||
+				((i - l4_part_info->first_bank_sectors) >= stm32x_info->option_bytes.wpr2b_start &&
+				 (i - l4_part_info->first_bank_sectors) <= stm32x_info->option_bytes.wpr2b_end))
+				bank->sectors[i].is_protected = 1;
+			else
+				bank->sectors[i].is_protected = 0;
+		}
 	}
 
 	return ERROR_OK;
@@ -512,8 +552,8 @@ static int stm32x_protect_check(struct flash_bank *bank)
 static int stm32x_erase(struct flash_bank *bank, int first, int last)
 {
 	struct target *target = bank->target;
-	struct stm32l4x_flash_bank *stm32x_flash = bank->driver_priv;
-	const struct stm32l4x_part_info *part_info = stm32x_flash->part_info;
+	struct stm32l4x_flash_bank *stm32x_info = bank->driver_priv;
+	const struct stm32l4x_part_info *l4_part_info = stm32x_info->part_info;
 	unsigned int i;
 	int retval;
 
@@ -540,13 +580,13 @@ static int stm32x_erase(struct flash_bank *bank, int first, int last)
 	*/
 
 	for (i = first; i <= (unsigned int)last; i++) {
-		if (i < part_info->first_bank_sectors)
-			retval = target_write_u32(target, stm32x_flash->flash_base + FLASH_CR,
+		if (i < l4_part_info->first_bank_sectors)
+			retval = target_write_u32(target, stm32x_info->flash_base + FLASH_CR,
 					FLASH_PER | FLASH_SNB(i) | FLASH_START);
 		else
-			retval = target_write_u32(target, stm32x_flash->flash_base + FLASH_CR,
+			retval = target_write_u32(target, stm32x_info->flash_base + FLASH_CR,
 					FLASH_BKER | FLASH_PER
-					| FLASH_SNB((i + part_info->hole_sectors)) | FLASH_START);
+					| FLASH_SNB((i + l4_part_info->hole_sectors)) | FLASH_START);
 		if (retval != ERROR_OK) {
 			LOG_ERROR("erase sector error %d", i);
 			return retval;
@@ -561,7 +601,7 @@ static int stm32x_erase(struct flash_bank *bank, int first, int last)
 		bank->sectors[i].is_erased = 1;
 	}
 
-	retval = target_write_u32(target, stm32x_flash->flash_base + FLASH_CR, FLASH_LOCK);
+	retval = target_write_u32(target, stm32x_info->flash_base + FLASH_CR, FLASH_LOCK);
 	if (retval != ERROR_OK) {
 		LOG_ERROR("error during the lock of flash");
 		return retval;
@@ -573,6 +613,7 @@ static int stm32x_protect(struct flash_bank *bank, int set, int first, int last)
 {
 	struct target *target = bank->target;
 	struct stm32l4x_flash_bank *stm32x_info = bank->driver_priv;
+	const struct stm32l4x_part_info *l4_part_info = stm32x_info->part_info;
 
 	if (target->state != TARGET_HALTED) {
 		LOG_ERROR("Target not halted");
@@ -594,11 +635,53 @@ static int stm32x_protect(struct flash_bank *bank, int set, int first, int last)
 	}
 
 	/* analyse the sectors protected to create zone of wpr */
-	if (set) {
-		stm32x_info->option_bytes.wpr1a_start = bank->sectors[first].offset;
-		stm32x_info->option_bytes.wpr1a_end = bank->sectors[last].offset;
+	/* zone in first bank only */
+	if ((first < l4_part_info->first_bank_sectors) && (last < l4_part_info->first_bank_sectors)) {
+		if (set) {
+			stm32x_info->option_bytes.wpr1a_start = first;
+			stm32x_info->option_bytes.wpr1a_end = last;
+		} else {
+			/* Fixme, should check old value */
+			/* if (stm32x_info->option_bytes.wpr1a_start ) */
+			stm32x_info->option_bytes.wpr1a_start = 0xff;
+			stm32x_info->option_bytes.wpr1a_end = 0;
+		}
 		stm32x_info->option_bytes.wpr1b_start = 0xff;
 		stm32x_info->option_bytes.wpr1b_end = 0;
+	}
+	/* zone in second bank only */
+	else if (first >= l4_part_info->first_bank_sectors) {
+		if (set) {
+			stm32x_info->option_bytes.wpr2a_start = first - l4_part_info->first_bank_sectors;
+			stm32x_info->option_bytes.wpr2a_end = last - l4_part_info->first_bank_sectors;
+		} else {
+			/* Fixme, should check old value */
+			/* if (stm32x_info->option_bytes.wpr2a_start ) */
+			stm32x_info->option_bytes.wpr2a_start = 0xff;
+			stm32x_info->option_bytes.wpr2a_end = 0;
+		}
+		stm32x_info->option_bytes.wpr2b_start = 0xff;
+		stm32x_info->option_bytes.wpr2b_end = 0;
+	}
+	/* zone spread over the two banks */
+	else if ((first < l4_part_info->first_bank_sectors) && (last >= l4_part_info->first_bank_sectors)) {
+		if (set) {
+			stm32x_info->option_bytes.wpr1a_start = first;
+			stm32x_info->option_bytes.wpr1a_end = l4_part_info->first_bank_sectors-1;
+			stm32x_info->option_bytes.wpr2a_start = 0;
+			stm32x_info->option_bytes.wpr2a_end = last - l4_part_info->first_bank_sectors;
+		} else {
+			/* Fixme, should check old value */
+			/* if (stm32x_info->option_bytes.wpr1a_start ) */
+			stm32x_info->option_bytes.wpr1a_start = 0xff;
+			stm32x_info->option_bytes.wpr1a_end = 0;
+			stm32x_info->option_bytes.wpr2a_start = 0xff;
+			stm32x_info->option_bytes.wpr2a_end = 0;
+		}
+		stm32x_info->option_bytes.wpr1b_start = 0xff;
+		stm32x_info->option_bytes.wpr1b_end = 0;
+		stm32x_info->option_bytes.wpr2b_start = 0xff;
+		stm32x_info->option_bytes.wpr2b_end = 0;
 	}
 
 	retval = stm32x_write_options(bank);
@@ -754,8 +837,6 @@ static int stm32x_write(struct flash_bank *bank, const uint8_t *buffer,
 		uint32_t offset, uint32_t count)
 {
 	struct target *target = bank->target;
-	int retval;
-
 	struct stm32l4x_flash_bank *stm32x_info = bank->driver_priv;
 
 	if (bank->target->state != TARGET_HALTED) {
@@ -780,7 +861,7 @@ static int stm32x_write(struct flash_bank *bank, const uint8_t *buffer,
 		 */
 	}
 
-	retval = stm32x_unlock_reg(bank);
+	int retval = stm32x_unlock_reg(bank);
 	if (retval != ERROR_OK)
 		return retval;
 
@@ -849,9 +930,9 @@ static int stm32x_probe(struct flash_bank *bank)
 		/* test if dual bank on a smaller device (hole between banks for sector erase) */
 		if ((options & DUALBANK) && (flash_size_in_kb < stm32x_info->part_info->max_flash_size_kb)) {
 			stm32x_info->part_info->first_bank_sectors = \
-						((flash_size_in_kb * 1024) / FLASH_SECTOR_SIZE)/2;
+						((flash_size_in_kb * 1024) / stm32x_info->part_info->page_size)/2;
 			stm32x_info->part_info->hole_sectors = \
-			            (((stm32x_info->part_info->max_flash_size_kb * 1024) / FLASH_SECTOR_SIZE) /2) \
+			            (((stm32x_info->part_info->max_flash_size_kb * 1024) / stm32x_info->part_info->page_size) /2) \
  			            - stm32x_info->part_info->first_bank_sectors;
 		}
 	}
@@ -864,8 +945,8 @@ static int stm32x_probe(struct flash_bank *bank)
 		LOG_INFO("ignoring flash probed value, using configured bank size: %d kbytes", flash_size_in_kb);
 	}
 
-	/* calculate numbers of sectors (2kB per sector) */
-	uint32_t num_sectors =  (flash_size_in_kb * 1024) / FLASH_SECTOR_SIZE;
+	/* calculate numbers of sectors */
+	uint32_t num_sectors =  (flash_size_in_kb * 1024) / stm32x_info->part_info->page_size;
 
 	if (bank->sectors) {
 		free(bank->sectors);
@@ -882,8 +963,8 @@ static int stm32x_probe(struct flash_bank *bank)
 	}
 
 	for (i = 0; i < num_sectors; i++) {
-		bank->sectors[i].offset = i * FLASH_SECTOR_SIZE;
-		bank->sectors[i].size = FLASH_SECTOR_SIZE;
+		bank->sectors[i].offset = i * stm32x_info->part_info->page_size;
+		bank->sectors[i].size = stm32x_info->part_info->page_size;
 		bank->sectors[i].is_erased = -1;
 		bank->sectors[i].is_protected = 1;
 	}
@@ -945,18 +1026,15 @@ static int get_stm32x_info(struct flash_bank *bank, char *buf, int buf_size)
 /* Static method for mass erase stuff implementation */
 static int stm32x_mass_erase(struct flash_bank *bank)
 {
-	int retval;
 	struct target *target = bank->target;
-	struct stm32l4x_flash_bank *stm32x_info = NULL;
+	struct stm32l4x_flash_bank *stm32x_info = bank->driver_priv;
 
 	if (target->state != TARGET_HALTED) {
 		LOG_ERROR("Target not halted");
 		return ERROR_TARGET_NOT_HALTED;
 	}
 
-	stm32x_info = bank->driver_priv;
-
-	retval = stm32x_unlock_reg(bank);
+	int retval = stm32x_unlock_reg(bank);
 	if (retval != ERROR_OK)
 		return retval;
 
@@ -1079,8 +1157,6 @@ COMMAND_HANDLER(stm32x_handle_unlock_command)
 
 COMMAND_HANDLER(stm32x_handle_mass_erase_command)
 {
-	int i;
-
 	if (CMD_ARGC < 1) {
 		command_print(CMD_CTX, "stm32l4x mass_erase <bank>");
 		return ERROR_COMMAND_SYNTAX_ERROR;
@@ -1094,7 +1170,7 @@ COMMAND_HANDLER(stm32x_handle_mass_erase_command)
 	retval = stm32x_mass_erase(bank);
 	if (retval == ERROR_OK) {
 		/* set all sectors as erased */
-		for (i = 0; i < bank->num_sectors; i++)
+		for (int i = 0; i < bank->num_sectors; i++)
 			bank->sectors[i].is_erased = 1;
 
 		command_print(CMD_CTX, "stm32l4x mass erase complete");
