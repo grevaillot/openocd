@@ -133,6 +133,10 @@ static const struct stm32f7x_rev stm32_449_revs[] = {
 };
 
 static const struct stm32f7x_rev stm32_451_revs[] = {
+	{ 0x1000, "A" }, { 0x1001, "Z" },
+};
+
+static const struct stm32f7x_rev stm32_452_revs[] = {
 	{ 0x1000, "A" },
 };
 
@@ -158,6 +162,17 @@ static const struct stm32f7x_part_info stm32f7x_parts[] = {
 		.has_dual_bank		= 1,
 		.flash_base			= 0x40023C00,
 		.fsize_base			= 0x1FF0F442,
+	},
+	{
+		.id					= 0x452,
+		.revs				= stm32_452_revs,
+		.num_revs			= ARRAY_SIZE(stm32_452_revs),
+		.device_str			= "STM32F72/F73xx 512K",
+		.page_size			= 128,  /* 128 KB */
+		.max_flash_size_kb	= 512,
+		.has_dual_bank		= 0,
+		.flash_base			= 0x40023C00,
+		.fsize_base			= 0x1FF07A22,
 	},
 };
 
@@ -853,13 +868,11 @@ static int stm32x_probe(struct flash_bank *bank)
 	assert(flash_size_in_kb != 0xffff);
 
 	/* calculate numbers of pages */
-	int num_pages;
+	int num_pages = (flash_size_in_kb / stm32x_info->part_info->page_size) + 4;
 
 	if (stm32x_info->part_info->has_dual_bank &&
 			((stm32x_info->option_bytes.user2_options & (1 << OPT_RDDUALBANK)) == 0))
-		num_pages = ((flash_size_in_kb / 256) + 4) * 2;
-	else
-		num_pages = (flash_size_in_kb / 256) + 4;
+		num_pages *= 2;
 
 	/* check that calculation result makes sense */
 	assert(num_pages > 0);
@@ -910,11 +923,11 @@ static int stm32x_probe(struct flash_bank *bank)
 		}
 	} else {
 		/* fixed memory */
-		setup_sector(bank, 0, 4, 32 * 1024);
-		setup_sector(bank, 4, 1, 128 * 1024);
+		setup_sector(bank, 0, 4, (stm32x_info->part_info->page_size/8) * 1024);
+		setup_sector(bank, 4, 1, (stm32x_info->part_info->page_size/2) * 1024);
 
 		/* dynamic memory */
-		setup_sector(bank, 5, num_pages - 5, 256 * 1024);
+		setup_sector(bank, 5, num_pages - 5, stm32x_info->part_info->page_size * 1024);
 	}
 
 	for (int i = 0; i < num_pages; i++) {

@@ -170,13 +170,16 @@ static const struct stm32l4x_rev stm32_415_revs[] = {
 };
 
 static const struct stm32l4x_rev stm32_435_revs[] = {
-	{ 0x1000, "A" },
+	{ 0x1000, "A" }, { 0x1001, "Z" },
 };
 
 static const struct stm32l4x_rev stm32_462_revs[] = {
 	{ 0x1000, "A" }, { 0x2000, "B" },
 };
 
+static const struct stm32l4x_rev stm32_461_revs[] = {
+	{ 0x1000, "A" }, { 0x2000, "B" },
+};
 
 static struct stm32l4x_part_info stm32l4x_parts[] = {
 	{
@@ -213,6 +216,19 @@ static struct stm32l4x_part_info stm32l4x_parts[] = {
 	  .page_size			= 2048,
 	  .max_flash_size_kb	= 512,
 	  .has_dual_bank		= 0,
+	  .first_bank_sectors	= 256,
+	  .hole_sectors			= 0,
+	  .flash_base			= 0x40022000,
+	  .fsize_base			= 0x1FFF75E0,
+	},
+	{
+	  .id					= 0x461,
+	  .revs					= stm32_461_revs,
+	  .num_revs				= ARRAY_SIZE(stm32_461_revs),
+	  .device_str			= "STM32L49/L4Axx", /* 1M or 512K or 256K */
+	  .page_size			= 2048,
+	  .max_flash_size_kb	= 1024,
+	  .has_dual_bank		= 1,
 	  .first_bank_sectors	= 256,
 	  .hole_sectors			= 0,
 	  .flash_base			= 0x40022000,
