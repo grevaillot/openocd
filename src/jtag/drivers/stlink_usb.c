@@ -38,6 +38,7 @@
 #include <target/cortex_m.h>
 
 #include "libusb_common.h"
+#include "unicode.h"
 
 #define ENDPOINT_IN  0x80
 #define ENDPOINT_OUT 0x00
@@ -1727,7 +1728,7 @@ static int stlink_usb_open(struct hl_interface_param_s *param, void **fd)
 	  in order to become operational.
 	 */
 	do {
-		if (jtag_libusb_open(vids, pids, serial, &h->fd) != ERROR_OK) {
+		if (jtag_libusb_open(vids, pids, param->serial, &h->fd) != ERROR_OK) {
 			LOG_ERROR("open failed");
 			goto error_open;
 		}

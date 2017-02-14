@@ -24,6 +24,7 @@
 #endif
 #include "log.h"
 #include "libusb1_common.h"
+#include "unicode.h"
 
 static struct libusb_context *jtag_libusb_context; /**< Libusb context **/
 static libusb_device **devs; /**< The usb device list **/
@@ -41,35 +42,89 @@ static bool jtag_libusb_match(struct libusb_device_descriptor *dev_desc,
 }
 
 /* Returns true if the string descriptor indexed by str_index in device matches string */
-static bool string_descriptor_equal(libusb_device_handle *device, uint8_t str_index,
-									const char *string)
+static bool serial_descriptor_equal(libusb_device_handle *device, uint8_t str_index,
+		const uint8_t *serial_utf8)
 {
 	int retval;
 	bool matched;
-	char desc_string[256+1]; /* Max size of string descriptor */
+	unsigned char tbuf[255];
+	uint16_t langid;
+	uint8_t desc_utf16le[2+256*2+1];  /* Max size of string in UTF16 */
+					/* plus 2 byte length  */
+	uint8_t desc_utf8[256 + 1];
 
 	if (str_index == 0)
 		return false;
 
-	retval = libusb_get_string_descriptor_ascii(device, str_index,
-			(unsigned char *)desc_string, sizeof(desc_string)-1);
+	/* Asking for the zero'th index is special - it returns a string
+	   descriptor that contains all the language IDs supported by the device.
+	   Typically there aren't many - often only one. The language IDs are 16
+	   bit numbers, and they start at the third byte in the descriptor. See
+	   USB 2.0 specification section 9.6.7 for more information.
+	   Note from libusb 1.0 sources (descriptor.c) */
+
+	retval = libusb_get_string_descriptor(device, 0, 0, tbuf, sizeof(tbuf));
+	if (retval < 4) {
+		LOG_ERROR("libusb_get_descriptor() failed to obtain language id with %d",
+				retval);
+		return false;
+	}                
+
+	/* Null terminate descriptor string in case it needs to be logged. */
+	langid = tbuf[2] | (tbuf[3] << 8);
+
+	/* libusb1's libusb_get_string_descriptor_ascii() replaces non ASCII
+	 * characters with '?' (0x3f). So use libusb_get_string_descriptor() instead.
+	 * Non ASCII characters in USB serials are found in the wild on
+	 * ST-Link and STM32 Discovery boards, which have serials like
+	 * "Q\377j\006I\207PS(H\t\207".
+	 * */
+	memset(desc_utf16le, 0, sizeof(desc_utf16le));
+	retval = libusb_get_string_descriptor(device, str_index, langid,
+			desc_utf16le, sizeof(desc_utf16le) - 1);
 	if (retval < 0) {
-		LOG_ERROR("libusb_get_string_descriptor_ascii() failed with %d", retval);
+		LOG_ERROR("libusb_get_string_descriptor() failed with %d", retval);
 		return false;
 	}
 
-	/* Null terminate descriptor string in case it needs to be logged. */
-	desc_string[sizeof(desc_string)-1] = '\0';
+	if (retval < 2
+			|| desc_utf16le[1] != LIBUSB_DT_STRING
+			|| desc_utf16le[0] > retval) {
+		LOG_ERROR("libusb_get_string_descriptor() string descriptor "
+				"validation failed");
+		return false;
+	}
 
-	matched = strncmp(string, desc_string, sizeof(desc_string)) == 0;
-	if (!matched)
-		LOG_DEBUG("Device serial number '%s' doesn't match requested serial '%s'",
-			desc_string, string);
+	/* USB string descriptors are stored in UTF-16LE encoding.  Conversion to
+	 * UTF-8 allow comparison with user entered serial number.
+	 */
+	if (utf16le_to_utf8(&desc_utf16le[2], retval - 2, desc_utf8, sizeof(desc_utf8)) < 0) {
+		LOG_DEBUG("Invalid serial number utf-16le encoding");
+		return false;
+	}
+
+	matched = strncmp((const char *)serial_utf8,
+			(const char *)desc_utf8,
+			sizeof(desc_utf8)) == 0;
+	if (!matched) {
+		char serial_text[256*4+1]; /* Max 256 byte descriptor formatted */
+		/* as \xHH chars */
+		char descriptor_text[256*4+1];
+
+		utf8_to_text(serial_utf8, serial_text, sizeof(serial_text));
+		utf8_to_text(desc_utf8, descriptor_text, sizeof(descriptor_text));
+
+		LOG_DEBUG("Device serial number '%s' doesn't match requested "
+				"serial '%s'",
+				descriptor_text,
+				serial_text);
+	}
+
 	return matched;
 }
 
 int jtag_libusb_open(const uint16_t vids[], const uint16_t pids[],
-		const char *serial,
+		const char *serial_utf8,
 		struct jtag_libusb_device_handle **out)
 {
 	int cnt, idx, errCode;
@@ -99,8 +154,9 @@ int jtag_libusb_open(const uint16_t vids[], const uint16_t pids[],
 		}
 
 		/* Device must be open to use libusb_get_string_descriptor_ascii. */
-		if (serial != NULL &&
-				!string_descriptor_equal(libusb_handle, dev_desc.iSerialNumber, serial)) {
+		if (serial_utf8 != NULL &&
+				!serial_descriptor_equal(libusb_handle, dev_desc.iSerialNumber,
+					(const uint8_t *)serial_utf8)) {
 			libusb_close(libusb_handle);
 			continue;
 		}
