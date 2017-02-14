@@ -97,28 +97,34 @@ static bool serial_descriptor_equal(libusb_device_handle *device, uint8_t str_in
 		return false;
 	}                
 
+	/* Null terminate descriptor string in case it needs to be logged. */
 	langid = tbuf[2] | (tbuf[3] << 8);
 
 	/* libusb1's libusb_get_string_descriptor_ascii() replaces non ASCII
 	 * characters with '?' (0x3f). So use libusb_get_string_descriptor() instead.
 	 * Non ASCII characters in USB serials are found in the wild on
 	 * ST-Link and STM32 Discovery boards, which have serials like
-	 * "Q\377j\006I\207PS(H\t\207". */
+	 * "Q\377j\006I\207PS(H\t\207".
+	 * */
 	memset(desc_utf16le, 0, sizeof(desc_utf16le));
 	retval = libusb_get_string_descriptor(device, str_index, langid,
-										desc_utf16le, sizeof(desc_utf16le) - 1);
+			desc_utf16le, sizeof(desc_utf16le) - 1);
 	if (retval < 0) {
 		LOG_ERROR("libusb_get_string_descriptor() failed with %d", retval);
 		return false;
 	}
 
-	if (retval < 2 || desc_utf16le[1] != LIBUSB_DT_STRING || desc_utf16le[0] > retval) {
-		LOG_ERROR("libusb_get_string_descriptor() string descriptor validation failed");
+	if (retval < 2
+			|| desc_utf16le[1] != LIBUSB_DT_STRING
+			|| desc_utf16le[0] > retval) {
+		LOG_ERROR("libusb_get_string_descriptor() string descriptor "
+				"validation failed");
 		return false;
 	}
 
-	/* USB string descriptors are stored in UTF-16LE encoding.
-	 * Conversion to UTF-8 allow comparison with user entered serial number. */
+	/* USB string descriptors are stored in UTF-16LE encoding.  Conversion to
+	 * UTF-8 allow comparison with user entered serial number.
+	 */
 	if (utf16le_to_utf8(&desc_utf16le[2], retval - 2, desc_utf8, sizeof(desc_utf8)) < 0) {
 		LOG_DEBUG("Invalid serial number utf-16le encoding");
 		return false;
