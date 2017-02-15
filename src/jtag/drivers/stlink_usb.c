@@ -18,9 +18,7 @@
  *   GNU General Public License for more details.                          *
  *                                                                         *
  *   You should have received a copy of the GNU General Public License     *
- *   along with this program; if not, write to the                         *
- *   Free Software Foundation, Inc.,                                       *
- *   51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.           *
+ *   along with this program.  If not, see <http://www.gnu.org/licenses/>. *
  ***************************************************************************/
 
 #ifdef HAVE_CONFIG_H
@@ -83,7 +81,7 @@ struct stlink_usb_version {
 	int stlink;
 	/** */
 	int jtag;
-	/** Swim version on v2, Mass Storage + VCP on v2-1 */
+	/** */
 	int swim;
 	/** highest supported jtag api version */
 	enum stlink_jtag_api_version jtag_api_max;
@@ -135,36 +133,20 @@ struct stlink_usb_handle_s {
 
 #define STLINK_DEBUG_ERR_OK            0x80
 #define STLINK_DEBUG_ERR_FAULT         0x81
-
-#define STLINK_JTAG_SPI_ERROR                    0x02
-#define STLINK_JTAG_DMA_ERROR                    0x03
-#define STLINK_JTAG_UNKNOWN_JTAG_CHAIN           0x04
-#define STLINK_JTAG_NO_DEVICE_CONNECTED          0x05
-#define STLINK_JTAG_INTERNAL_ERROR               0x06
-#define STLINK_JTAG_CMD_WAIT                     0x07
-#define STLINK_JTAG_CMD_ERROR                    0x08
-#define STLINK_JTAG_GET_IDCODE_ERROR             0x09
-#define STLINK_JTAG_ALIGNMENT_ERROR              0x0A
-#define STLINK_JTAG_DBG_POWER_ERROR              0x0B
-#define STLINK_JTAG_WRITE_ERROR                  0x0C
-#define STLINK_JTAG_WRITE_VERIF_ERROR            0x0D
-#define STLINK_JTAG_ALREADY_OPENED_IN_OTHER_MODE 0x0E // New from V2J24
-
 #define STLINK_SWD_AP_WAIT             0x10
 #define STLINK_SWD_AP_FAULT            0x11
 #define STLINK_SWD_AP_ERROR            0x12
 #define STLINK_SWD_AP_PARITY_ERROR     0x13
+#define STLINK_JTAG_WRITE_ERROR        0x0c
+#define STLINK_JTAG_WRITE_VERIF_ERROR  0x0d
 #define STLINK_SWD_DP_WAIT             0x14
 #define STLINK_SWD_DP_FAULT            0x15
 #define STLINK_SWD_DP_ERROR            0x16
 #define STLINK_SWD_DP_PARITY_ERROR     0x17
-#define STLINK_SWD_AP_WDATA_ERROR      0x18
-#define STLINK_SWD_AP_STICKY_ERROR     0x19 // No more specific to SWD from V2J24
-#define STLINK_SWD_AP_STICKYORUN_ERROR 0x1A // No more specific to SWD from V2J24
-#define STLINK_AP_ALREADY_USED         0x1B
-#define STLINK_TRACE_AP_TURNAROUND     0x1C
-#define STLINK_BAD_AP                  0x1D
 
+#define STLINK_SWD_AP_WDATA_ERROR      0x18
+#define STLINK_SWD_AP_STICKY_ERROR     0x19
+#define STLINK_SWD_AP_STICKYORUN_ERROR 0x1a
 
 #define STLINK_CORE_RUNNING            0x80
 #define STLINK_CORE_HALTED             0x81
@@ -271,6 +253,10 @@ static const struct {
 };
 
 static void stlink_usb_init_buffer(void *handle, uint8_t direction, uint32_t size);
+
+
+extern void get_device_serial_number(jtag_libusb_device_handle *dev, char *serial_code, int len);
+
 
 /** */
 static int stlink_usb_xfer_v1_get_status(void *handle)
@@ -413,86 +399,49 @@ static int stlink_usb_error_check(void *handle)
 		case STLINK_DEBUG_ERR_FAULT:
 			LOG_DEBUG("SWD fault response (0x%x)", STLINK_DEBUG_ERR_FAULT);
 			return ERROR_FAIL;
-		case STLINK_JTAG_SPI_ERROR:
-			LOG_DEBUG("JTAG_INTERNAL_ERROR (SPI)");
-			return ERROR_FAIL;
-		case STLINK_JTAG_DMA_ERROR:
-			LOG_DEBUG("JTAG_INTERNAL_ERROR (DMA)");
-			return ERROR_FAIL;
-		case STLINK_JTAG_UNKNOWN_JTAG_CHAIN:
-			LOG_DEBUG("UNKNOWN_JTAG_CHAIN");
-			return ERROR_FAIL;
-		case STLINK_JTAG_NO_DEVICE_CONNECTED:
-			LOG_DEBUG("NO_DEVICE_CONNECTED");
-			return ERROR_FAIL;
-		case STLINK_JTAG_INTERNAL_ERROR:
-			LOG_DEBUG("JTAG_INTERNAL_ERROR");
-			return ERROR_FAIL;
-		case STLINK_JTAG_CMD_WAIT:
-			LOG_DEBUG("wait status STLINK_JTAG_CMD_WAIT (0x%x)", STLINK_JTAG_CMD_WAIT);
-			return ERROR_WAIT;
-		case STLINK_JTAG_CMD_ERROR:
-			LOG_DEBUG("JTAG_CMD_ERROR");
-			return ERROR_FAIL;
-		case STLINK_JTAG_GET_IDCODE_ERROR:
-			LOG_DEBUG("JTAG_GET_IDCODE_ERROR");
-			return ERROR_FAIL;
-		case STLINK_JTAG_ALIGNMENT_ERROR:
-			LOG_DEBUG("JTAG_ALIGNMENT_ERROR");
-			return ERROR_FAIL;
-		case STLINK_JTAG_DBG_POWER_ERROR:
-			LOG_DEBUG("JTAG_DBG_POWER_ERROR");
-			return ERROR_FAIL;
-		case STLINK_JTAG_WRITE_ERROR:
-			LOG_DEBUG("Jtag write error");
-			return ERROR_FAIL;
-		case STLINK_JTAG_WRITE_VERIF_ERROR:
-			LOG_DEBUG("Jtag verify error");
-			return ERROR_FAIL;
-		case STLINK_JTAG_ALREADY_OPENED_IN_OTHER_MODE:
-			LOG_DEBUG("JTAG_ALREADY_OPENED_IN_OTHER_MODE");
-			return ERROR_FAIL;
 		case STLINK_SWD_AP_WAIT:
 			LOG_DEBUG("wait status SWD_AP_WAIT (0x%x)", STLINK_SWD_AP_WAIT);
 			return ERROR_WAIT;
-		case STLINK_SWD_AP_FAULT:
-			LOG_DEBUG("SWD_AP_FAULT");
-			return ERROR_OK;
-		case STLINK_SWD_AP_ERROR:
-			LOG_DEBUG("SWD_AP_ERROR");
-			return ERROR_FAIL;
-		case STLINK_SWD_AP_PARITY_ERROR:
-			LOG_DEBUG("SWD_AP_PARITY_ERROR");
-			return ERROR_FAIL;
 		case STLINK_SWD_DP_WAIT:
 			LOG_DEBUG("wait status SWD_DP_WAIT (0x%x)", STLINK_SWD_DP_WAIT);
 			return ERROR_WAIT;
+		case STLINK_JTAG_WRITE_ERROR:
+			LOG_DEBUG("Write error");
+			return ERROR_FAIL;
+		case STLINK_JTAG_WRITE_VERIF_ERROR:
+			LOG_DEBUG("Verify error");
+			return ERROR_FAIL;
+		case STLINK_SWD_AP_FAULT:
+			/* git://git.ac6.fr/openocd commit 657e3e885b9ee10
+			 * returns ERROR_OK with the comment:
+			 * Change in error status when reading outside RAM.
+			 * This fix allows CDT plugin to visualize memory.
+			 */
+			LOG_DEBUG("STLINK_SWD_AP_FAULT");
+			return ERROR_FAIL;
+		case STLINK_SWD_AP_ERROR:
+			LOG_DEBUG("STLINK_SWD_AP_ERROR");
+			return ERROR_FAIL;
+		case STLINK_SWD_AP_PARITY_ERROR:
+			LOG_DEBUG("STLINK_SWD_AP_PARITY_ERROR");
+			return ERROR_FAIL;
 		case STLINK_SWD_DP_FAULT:
-			LOG_DEBUG("SWD_DP_FAULT");
+			LOG_DEBUG("STLINK_SWD_DP_FAULT");
 			return ERROR_FAIL;
 		case STLINK_SWD_DP_ERROR:
-			LOG_DEBUG("SWD_DP_ERROR");
+			LOG_DEBUG("STLINK_SWD_DP_ERROR");
 			return ERROR_FAIL;
 		case STLINK_SWD_DP_PARITY_ERROR:
-			LOG_DEBUG("SWD_DP_PARITY_ERROR");
+			LOG_DEBUG("STLINK_SWD_DP_PARITY_ERROR");
 			return ERROR_FAIL;
 		case STLINK_SWD_AP_WDATA_ERROR:
-			LOG_DEBUG("SWD_AP_WDATA_ERROR");
+			LOG_DEBUG("STLINK_SWD_AP_WDATA_ERROR");
 			return ERROR_FAIL;
 		case STLINK_SWD_AP_STICKY_ERROR:
-			LOG_DEBUG("SWD_AP_STICKY_ERROR");
+			LOG_DEBUG("STLINK_SWD_AP_STICKY_ERROR");
 			return ERROR_FAIL;
 		case STLINK_SWD_AP_STICKYORUN_ERROR:
-			LOG_DEBUG("SWD_AP_STICKYORUN_ERROR");
-			return ERROR_FAIL;
-		case STLINK_AP_ALREADY_USED:
-			LOG_DEBUG("AP_ALREADY_USED");
-			return ERROR_FAIL;
-		case STLINK_TRACE_AP_TURNAROUND:
-			LOG_DEBUG("TRACE_AP_TURNAROUND");
-			return ERROR_FAIL;
-		case STLINK_BAD_AP:
-			LOG_DEBUG("BAD_AP");
+			LOG_DEBUG("STLINK_SWD_AP_STICKYORUN_ERROR");
 			return ERROR_FAIL;
 		default:
 			LOG_DEBUG("unknown/unexpected STLINK status code 0x%x", h->databuf[0]);
@@ -610,11 +559,10 @@ static int stlink_usb_version(void *handle)
 	else
 		h->version.jtag_api_max = STLINK_JTAG_API_V1;
 
-	LOG_INFO("STLINK v%d JTAG v%d API v%d %s v%d VID 0x%04X PID 0x%04X",
+	LOG_INFO("STLINK v%d JTAG v%d API v%d SWIM v%d VID 0x%04X PID 0x%04X",
 		h->version.stlink,
 		h->version.jtag,
 		(h->version.jtag_api_max == STLINK_JTAG_API_V1) ? 1 : 2,
-		(h->pid == STLINK_V2_1_PID) ? "M" : "SWIM",
 		h->version.swim,
 		h->vid,
 		h->pid);
@@ -1219,7 +1167,7 @@ static int stlink_usb_step(void *handle)
 
 	if (h->jtag_api == STLINK_JTAG_API_V2) {
 		/* TODO: this emulates the v1 api, it should really use a similar auto mask isr
-		 * that the cortex-m3 currently does. */
+		 * that the Cortex-M3 currently does. */
 		stlink_usb_write_debug_reg(handle, DCB_DHCSR, DBGKEY|C_HALT|C_MASKINTS|C_DEBUGEN);
 		stlink_usb_write_debug_reg(handle, DCB_DHCSR, DBGKEY|C_STEP|C_MASKINTS|C_DEBUGEN);
 		return stlink_usb_write_debug_reg(handle, DCB_DHCSR, DBGKEY|C_HALT|C_DEBUGEN);
@@ -1707,16 +1655,13 @@ static int stlink_usb_open(struct hl_interface_param_s *param, void **fd)
 
 	h->transport = param->transport;
 
-	const uint16_t vids[] = { param->vid, param->vid, param->vid, 0 };
-	const uint16_t pids[] = { STLINK_V2_PID, STLINK_V2_1_PID, param->pid, 0 };
+	const uint16_t vids[] = { param->vid, 0 };
+	const uint16_t pids[] = { param->pid, 0 };
 
-	char serial_text[256];
+        LOG_INFO("transport: %d vid: 0x%04x pid: 0x%04x serial: %s",
+                  param->transport, param->vid, param->pid,
+                  param->serial);
 
-	utf8_to_text((const uint8_t *)param->serial, serial_text, sizeof(serial_text));
-
-	LOG_DEBUG("transport: %d vid: 0x%04x pid: 0x%04x serial: %s",
-			param->transport, param->vid, param->pid,
-			serial_text);
 
 	/*
 	  On certain host USB configurations(e.g. MacBook Air)
@@ -1729,7 +1674,7 @@ static int stlink_usb_open(struct hl_interface_param_s *param, void **fd)
 	 */
 	do {
 		if (jtag_libusb_open(vids, pids, param->serial, &h->fd) != ERROR_OK) {
-			LOG_ERROR("open failed");
+			LOG_ERROR("open failed (no matching adapter found)");
 			goto error_open;
 		}
 
@@ -1743,15 +1688,8 @@ static int stlink_usb_open(struct hl_interface_param_s *param, void **fd)
 		/* RX EP is common for all versions */
 		h->rx_ep = STLINK_RX_EP;
 
-		uint16_t pid;
-
-        if (jtag_libusb_get_pid(h->fd, &pid) != ERROR_OK) {
-			LOG_DEBUG("get pid failed");
-			goto error_open;
-		}
-
 		/* wrap version for first read */
-		switch (pid) {
+		switch (param->pid) {
 			case STLINK_V1_PID:
 				h->version.stlink = 1;
 				h->tx_ep = STLINK_TX_EP;

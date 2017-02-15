@@ -14,20 +14,18 @@
  *   GNU General Public License for more details.                          *
  *                                                                         *
  *   You should have received a copy of the GNU General Public License     *
- *   along with this program; if not, write to the                         *
- *   Free Software Foundation, Inc.,                                       *
- *   51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.           *
+ *   along with this program.  If not, see <http://www.gnu.org/licenses/>. *
  ***************************************************************************/
 
-#ifndef JTAG_LIBUSB_COMMON_H
-#define JTAG_LIBUSB_COMMON_H
+#ifndef OPENOCD_JTAG_DRIVERS_LIBUSB1_COMMON_H
+#define OPENOCD_JTAG_DRIVERS_LIBUSB1_COMMON_H
 
 #include <libusb.h>
 
-#define jtag_libusb_device					libusb_device
-#define jtag_libusb_device_handle			libusb_device_handle
+#define jtag_libusb_device			libusb_device
+#define jtag_libusb_device_handle		libusb_device_handle
 #define jtag_libusb_device_descriptor		libusb_device_descriptor
-#define jtag_libusb_interface				libusb_interface
+#define jtag_libusb_interface			libusb_interface
 #define jtag_libusb_interface_descriptor	libusb_interface_descriptor
 #define jtag_libusb_endpoint_descriptor		libusb_endpoint_descriptor
 #define jtag_libusb_config_descriptor		libusb_config_descriptor
@@ -77,6 +75,6 @@ int jtag_libusb_choose_interface(struct jtag_libusb_device_handle *devh,
 		unsigned int *usb_read_ep,
 		unsigned int *usb_write_ep,
 		int bclass, int subclass, int protocol);
-int jtag_libusb_get_pid(struct jtag_libusb_device_handle *devh, uint16_t *pid);
+int jtag_libusb_get_pid(struct jtag_libusb_device *dev, uint16_t *pid);
 
-#endif /* JTAG_USB_COMMON_H */
+#endif /* OPENOCD_JTAG_DRIVERS_LIBUSB1_COMMON_H */
