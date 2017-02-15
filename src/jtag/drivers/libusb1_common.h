@@ -22,10 +22,10 @@
 
 #include <libusb.h>
 
-#define jtag_libusb_device					libusb_device
-#define jtag_libusb_device_handle			libusb_device_handle
+#define jtag_libusb_device			libusb_device
+#define jtag_libusb_device_handle		libusb_device_handle
 #define jtag_libusb_device_descriptor		libusb_device_descriptor
-#define jtag_libusb_interface				libusb_interface
+#define jtag_libusb_interface			libusb_interface
 #define jtag_libusb_interface_descriptor	libusb_interface_descriptor
 #define jtag_libusb_endpoint_descriptor		libusb_endpoint_descriptor
 #define jtag_libusb_config_descriptor		libusb_config_descriptor
@@ -75,6 +75,6 @@ int jtag_libusb_choose_interface(struct jtag_libusb_device_handle *devh,
 		unsigned int *usb_read_ep,
 		unsigned int *usb_write_ep,
 		int bclass, int subclass, int protocol);
-int jtag_libusb_get_pid(struct jtag_libusb_device_handle *devh, uint16_t *pid);
+int jtag_libusb_get_pid(struct jtag_libusb_device *dev, uint16_t *pid);
 
 #endif /* OPENOCD_JTAG_DRIVERS_LIBUSB1_COMMON_H */
