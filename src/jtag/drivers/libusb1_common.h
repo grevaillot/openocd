@@ -75,6 +75,7 @@ int jtag_libusb_choose_interface(struct jtag_libusb_device_handle *devh,
 		unsigned int *usb_read_ep,
 		unsigned int *usb_write_ep,
 		int bclass, int subclass, int protocol);
-int jtag_libusb_get_pid(struct jtag_libusb_device *dev, uint16_t *pid);
+int jtag_libusb_get_pid(struct jtag_libusb_device_handle *devh, uint16_t *pid);
+
 
 #endif /* OPENOCD_JTAG_DRIVERS_LIBUSB1_COMMON_H */
