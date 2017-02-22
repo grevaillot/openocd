@@ -1644,8 +1644,6 @@ static int stlink_usb_open(struct hl_interface_param_s *param, void **fd)
 	struct stlink_usb_handle_s *h;
 	enum stlink_jtag_api_version api;
 
-	LOG_DEBUG("stlink_usb_open");
-
 	h = calloc(1, sizeof(struct stlink_usb_handle_s));
 
 	if (h == 0) {
@@ -1655,13 +1653,16 @@ static int stlink_usb_open(struct hl_interface_param_s *param, void **fd)
 
 	h->transport = param->transport;
 
-	const uint16_t vids[] = { param->vid, 0 };
-	const uint16_t pids[] = { param->pid, 0 };
+	const uint16_t vids[] = { param->vid, param->vid, param->vid, 0 };
+	const uint16_t pids[] = { STLINK_V2_PID, STLINK_V2_1_PID, param->pid, 0 };
 
-        LOG_INFO("transport: %d vid: 0x%04x pid: 0x%04x serial: %s",
-                  param->transport, param->vid, param->pid,
-                  param->serial);
-
+        if ( param->serial != NULL) 
+          LOG_INFO("transport: %d vid: 0x%04x pid: 0x%04x serial: %s",
+                   param->transport, param->vid, param->pid,
+                   param->serial);
+        else
+          LOG_INFO("transport: %d vid: 0x%04x pid: 0x%04x serial: ",
+                   param->transport, param->vid, param->pid);
 
 	/*
 	  On certain host USB configurations(e.g. MacBook Air)
@@ -1688,8 +1689,14 @@ static int stlink_usb_open(struct hl_interface_param_s *param, void **fd)
 		/* RX EP is common for all versions */
 		h->rx_ep = STLINK_RX_EP;
 
+		uint16_t pid;
+               if (jtag_libusb_get_pid(h->fd, &pid) != ERROR_OK) {
+			LOG_DEBUG("get pid failed");
+			goto error_open;
+		}
+
 		/* wrap version for first read */
-		switch (param->pid) {
+		switch (pid) {
 			case STLINK_V1_PID:
 				h->version.stlink = 1;
 				h->tx_ep = STLINK_TX_EP;

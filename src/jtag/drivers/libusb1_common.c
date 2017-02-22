@@ -149,18 +149,13 @@ static bool serial_descriptor_equal(libusb_device_handle *device, uint8_t str_in
 		/* as \xHH chars */
 		char descriptor_text[256*4+1];
 
-                LOG_ERROR("Device serial number '%s' doesn't match requested "
-				  "serial '%s'",
-				  serial_utf8,
-				  desc_utf8);
-
 		utf8_to_text(serial_utf8, serial_text, sizeof(serial_text));
 		utf8_to_text(desc_utf8, descriptor_text, sizeof(descriptor_text));
 
 		if (print_mismatch)
 			LOG_ERROR("Device serial number '%s' doesn't match requested "
 				  "serial '%s'",
-				  descriptor_text,
+				  serial_text2,
 				  serial_text);
 	}
 
@@ -355,8 +350,9 @@ int jtag_libusb_choose_interface(struct jtag_libusb_device_handle *devh,
 	return ERROR_FAIL;
 }
 
-int jtag_libusb_get_pid(struct jtag_libusb_device *dev, uint16_t *pid)
+int jtag_libusb_get_pid(struct jtag_libusb_device_handle *devh, uint16_t *pid)
 {
+	struct jtag_libusb_device *dev = jtag_libusb_get_device(devh);
 	struct libusb_device_descriptor dev_desc;
 
 	if (libusb_get_device_descriptor(dev, &dev_desc) == 0) {
