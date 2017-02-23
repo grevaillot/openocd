@@ -18,9 +18,7 @@
  *   GNU General Public License for more details.                          *
  *                                                                         *
  *   You should have received a copy of the GNU General Public License     *
- *   along with this program; if not, write to the                         *
- *   Free Software Foundation, Inc.,                                       *
- *   51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.           *
+ *   along with this program.  If not, see <http://www.gnu.org/licenses/>. *
  ***************************************************************************/
 
 #ifdef HAVE_CONFIG_H
@@ -38,6 +36,7 @@
 #include <target/cortex_m.h>
 
 #include "libusb_common.h"
+#include "unicode.h"
 
 #define ENDPOINT_IN  0x80
 #define ENDPOINT_OUT 0x00
@@ -270,6 +269,8 @@ static const struct {
 };
 
 static void stlink_usb_init_buffer(void *handle, uint8_t direction, uint32_t size);
+
+extern void get_device_serial_number(jtag_libusb_device_handle *dev, char *serial_code, int len);
 
 /** */
 static int stlink_usb_xfer_v1_get_status(void *handle)
@@ -1709,8 +1710,6 @@ static int stlink_usb_open(struct hl_interface_param_s *param, void **fd)
 	const uint16_t vids[] = { param->vid, param->vid, param->vid, 0 };
 	const uint16_t pids[] = { STLINK_V2_PID, STLINK_V2_1_PID, param->pid, 0 };
 
-	const char *serial = param->serial;
-
 	LOG_DEBUG("transport: %d vid: 0x%04x pid: 0x%04x serial: %s",
 			param->transport, param->vid, param->pid,
 			param->serial ? param->serial : "");
@@ -1725,8 +1724,8 @@ static int stlink_usb_open(struct hl_interface_param_s *param, void **fd)
 	  in order to become operational.
 	 */
 	do {
-		if (jtag_libusb_open(vids, pids, serial, &h->fd) != ERROR_OK) {
-			LOG_ERROR("open failed");
+		if (jtag_libusb_open(vids, pids, param->serial, &h->fd) != ERROR_OK) {
+			LOG_ERROR("open failed (no matching adapter found)");
 			goto error_open;
 		}
 
