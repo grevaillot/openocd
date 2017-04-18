@@ -60,11 +60,17 @@ static int hl_layout_close(struct hl_interface_s *adapter)
 
 static const struct hl_layout hl_layouts[] = {
 	{
-	 .name = "stlink",
+	 .name = "stlink-usb",
 	 .open = hl_layout_open,
 	 .close = hl_layout_close,
 	 .api = &stlink_usb_layout_api,
 	 },
+	{
+	 .name = "stlink-tcp",
+	 .open = hl_layout_open,
+	 .close = hl_layout_close,
+	 .api = &stlink_tcp_layout_api,
+	 },	
 	{
 	 .name = "ti-icdi",
 	 .open = hl_layout_open,
