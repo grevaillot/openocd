@@ -1701,7 +1701,7 @@ static int stlink_speed(void *handle, int khz, bool query)
 		} else if (i == ARRAY_SIZE(jtag_stlink_khz_to_speed_map))
 			match = false;
 
-		if (!match && query) {
+		if (!match) {
 			LOG_INFO("Unable to match requested speed %d kHz, using %d kHz", \
 					khz, jtag_stlink_khz_to_speed_map[speed_index].speed);
 		}
@@ -1744,7 +1744,7 @@ static int stlink_speed(void *handle, int khz, bool query)
 		} else if (i == ARRAY_SIZE(stlink_khz_to_speed_map))
 			match = false;
 
-		if (!match && query) {
+		if (!match) {
 			LOG_INFO("Unable to match requested speed %d kHz, using %d kHz", \
 					khz, stlink_khz_to_speed_map[speed_index].speed);
 		}
@@ -1756,6 +1756,7 @@ static int stlink_speed(void *handle, int khz, bool query)
 				return khz;
 			}
 		}
+
 		return stlink_khz_to_speed_map[speed_index].speed;
 	}
 	else
