@@ -38,6 +38,42 @@ static bool jtag_libusb_match(struct libusb_device_descriptor *dev_desc,
 	}
 	return false;
 }
+/* 
+   Convert the serial number descriptor string from the device descriptor (possibly in wrong format with
+   old devices) into a 24 characters string (hexadecimal representation of the 12-bytes STM32 unique ID)
+*/
+unsigned long compute_serial_str(unsigned char *descriptor,  char *str)
+{
+	int i;
+	int len = descriptor[0];
+
+	if (len == 26) {
+		/* Size value returned by the "old" ST-Link DFU;
+		In that case the DFU returns 12 8-bits values, separated by 12 zeros;
+		This is a bad encoding of Unicode characters, that we workaround here ...
+		*/
+		for (i = 0; i < 12; i++) {
+			/* Useful values reside at sNDescriptor[2],[4] ... [24]
+			Each 8-bits value will be expressed on 2 hexadecimal digits in sNString
+			*/
+			sprintf((char *) &(str[i * 2]), "%02hX", (unsigned short)descriptor[2 * (i + 1)]);
+
+		}
+	} else if (len == 50) {
+          /*
+            Size value returned by the new ST-Link 
+            In that case the DFU returns 24 Unicode characters;
+            Simply convert in 1-byte character string
+          */
+            for (i = 0; i < 24; i++) {
+                  str[i] = descriptor[2 * (i + 1)];
+		}
+	}
+        /* In any cases add a NULL terminating character */
+      str[24]='\0';
+
+      return ERROR_OK;
+}
 
 /* Convert the serial number descriptor string from the device descriptor 
    (possibly in wrong format with old devices) into a 24 characters string 
@@ -72,7 +108,7 @@ unsigned long compute_serial_str(unsigned char *descriptor, char *str)
 
 /* Returns true if the string descriptor indexed by str_index in device matches string */
 static bool serial_descriptor_equal(libusb_device_handle *device, uint8_t str_index,
-									const uint8_t *serial_utf8, bool print_mismatch)
+				    const uint8_t *serial_utf8, bool print_mismatch)
 {
 	int retval;
 	bool matched;
@@ -95,9 +131,8 @@ static bool serial_descriptor_equal(libusb_device_handle *device, uint8_t str_in
 		LOG_ERROR("libusb_get_descriptor() failed to obtain language id with %d",
 				retval);
 		return false;
-	}                
+	}
 
-	/* Null terminate descriptor string in case it needs to be logged. */
 	langid = tbuf[2] | (tbuf[3] << 8);
 
 	/* libusb1's libusb_get_string_descriptor_ascii() replaces non ASCII
@@ -106,6 +141,7 @@ static bool serial_descriptor_equal(libusb_device_handle *device, uint8_t str_in
 	 * ST-Link and STM32 Discovery boards, which have serials like
 	 * "Q\377j\006I\207PS(H\t\207".
 	 * */
+
 	memset(desc_utf16le, 0, sizeof(desc_utf16le));
 	retval = libusb_get_string_descriptor(device, str_index, langid,
 			desc_utf16le, sizeof(desc_utf16le) - 1);
@@ -130,16 +166,27 @@ static bool serial_descriptor_equal(libusb_device_handle *device, uint8_t str_in
 		return false;
 	}
 
-	char desc_serial_text[256*4+1]; /* Max 256 byte descriptor formatted as \xHH chars */
-	char serial_text[256*4+1]; /* Max 256 byte descriptor formatted as \xHH chars */
-	compute_serial_str(desc_utf16le, desc_serial_text);
-	utf8_to_text(serial_utf8, serial_text, sizeof(serial_text));
+        char serial_text2[256*4+1]; /* Max 256 byte descriptor formatted */
+        char serial_text[256*4+1]; /* Max 256 byte descriptor formatted */
+        compute_serial_str(desc_utf16le, serial_text2);
+        utf8_to_text(serial_utf8, serial_text, sizeof(serial_text));
+      
+	matched = strcmp((const char *)serial_text,
+			 (const char *)serial_text2) == 0;
+	if (!matched) {
 
-	matched = strcmp((const char *)serial_text, (const char *)desc_serial_text) == 0;
+		/* as \xHH chars */
+		char descriptor_text[256*4+1];
 
-	if (!matched && print_mismatch)
-		LOG_DEBUG("Device serial number '%s' doesn't match requested serial '%s'",
-				desc_serial_text, serial_text);
+		utf8_to_text(serial_utf8, serial_text, sizeof(serial_text));
+		utf8_to_text(desc_utf8, descriptor_text, sizeof(descriptor_text));
+
+		if (print_mismatch)
+			LOG_ERROR("Device serial number '%s' doesn't match requested "
+				  "serial '%s'",
+				  serial_text2,
+				  serial_text);
+	}
 
 	return matched;
 }
@@ -170,7 +217,7 @@ static struct jtag_libusb_device_handle *iterate_devs(const uint16_t vids[], con
 		/* Device must be open to use libusb_get_string_descriptor. */
 		if (serial_utf8 != NULL &&
 				!serial_descriptor_equal(libusb_handle, dev_desc.iSerialNumber,
-								(const uint8_t *)serial_utf8, print_mismatch)) {
+							 (const uint8_t *)serial_utf8, print_mismatch)) {
 			libusb_close(libusb_handle);
 			continue;
 		}
@@ -196,7 +243,6 @@ int jtag_libusb_open(const uint16_t vids[], const uint16_t pids[],
 	ssize_t cnt = libusb_get_device_list(jtag_libusb_context, &devs);
 	if (cnt < 0) {
 		LOG_ERROR("libusb_get_device_list() failed with %s", 
-				libusb_error_name(cnt));
 		return -ENODEV;
 	}
 

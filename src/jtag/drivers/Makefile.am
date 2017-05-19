@@ -121,6 +121,7 @@ DRIVERFILES += remote_bitbang.c
 endif
 if HLADAPTER
 DRIVERFILES += stlink_usb.c
+DRIVERFILES += stlink_tcp.c
 DRIVERFILES += ti_icdi_usb.c
 endif
 if OSBDM
