@@ -77,7 +77,7 @@ unsigned long compute_serial_str(unsigned char *descriptor,  char *str)
 
 /* Returns true if the string descriptor indexed by str_index in device matches string */
 static bool serial_descriptor_equal(libusb_device_handle *device, uint8_t str_index,
-	const uint8_t *serial_utf8, bool print_mismatch)
+				    const uint8_t *serial_utf8, bool print_mismatch)
 {
 	int retval;
 	bool matched;
@@ -183,6 +183,14 @@ static struct jtag_libusb_device_handle *iterate_devs(const uint16_t vids[], con
 			continue;
 		}
 
+		/* Device must be open to use libusb_get_string_descriptor. */
+		if (serial_utf8 != NULL &&
+				!serial_descriptor_equal(libusb_handle, dev_desc.iSerialNumber,
+							 (const uint8_t *)serial_utf8, print_mismatch)) {
+			libusb_close(libusb_handle);
+			continue;
+		}
+
 		if (print_mismatch) {
 			/* Device must be open to use libusb_get_string_descriptor. */
 			if (serial_utf8 != NULL &&
@@ -208,8 +216,7 @@ int jtag_libusb_open(const uint16_t vids[], const uint16_t pids[],
 
 	ssize_t cnt = libusb_get_device_list(jtag_libusb_context, &devs);
 	if (cnt < 0) {
-		LOG_ERROR("libusb_get_device_list() failed with %s", 
-				libusb_error_name(cnt));
+	  LOG_ERROR("libusb_get_device_list() failed with %s", serial_utf8); 
 		return -ENODEV;
 	}
 
