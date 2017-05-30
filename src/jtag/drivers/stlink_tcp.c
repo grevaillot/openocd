@@ -418,8 +418,8 @@ static int stlink_usb_get_version(void *handle, struct stlink_tcp_version *v)
          	sscanf(string[2], "%d", (unsigned int *)&v->stlink);
           	sscanf(string[3], "%d", (unsigned int *)&v->jtag);
           	sscanf(string[4], "%d", (unsigned int *)&v->swim);
-          	sscanf(string[5], "%x", (unsigned int *)&v->pid);
-          	sscanf(string[6], "%x", (unsigned int *)&v->vid);
+          	sscanf(string[5], "%x", (unsigned int *)(void *)&v->pid);
+          	sscanf(string[6], "%x", (unsigned int *)(void *)&v->vid);
           	return ERROR_OK;
         } else {
          	return ERROR_FAIL;
@@ -554,7 +554,7 @@ static int stlink_tcp_read_mem(void *handle, uint32_t addr, uint32_t size, uint3
         assert(handle != NULL);
 
         if (size == 4 && count == 1) {
-		return stlink_tcp_read_debug_reg(handle, addr, (int*)buffer);
+		return stlink_tcp_read_debug_reg(handle, addr, (int*)(void *)buffer);
         } else {
                 sprintf(cmd_in, "stlink-tcp-read-mem %d %x %x %x %x\n",  h->connect_id, addr , size, count, 0);
 
@@ -571,7 +571,7 @@ static int stlink_tcp_speed(void *handle, int khz, bool query)
         struct stlink_tcp_handle_s *h = handle;
         char cmd_in[BUFFER_LENGTH];
         char cmd_out[BUFFER_LENGTH];
-        int khz_choosen;
+        int khz_choosen=1800;
 
         if (handle) {
 		sprintf(cmd_in, "stlink-tcp-speed %d %x %x\n", h->connect_id, khz ,query); 
@@ -579,8 +579,6 @@ static int stlink_tcp_speed(void *handle, int khz, bool query)
                   sscanf(&cmd_out[2], "%d", &khz_choosen);
                   LOG_INFO("Match for requested speed %d kHz, using %d kHz", khz, khz_choosen);
                 }
-        } else {
-          khz_choosen = 1800;
         }
         
         return khz_choosen;
@@ -644,7 +642,7 @@ static int stlink_tcp_trace_read_h(void *handle, uint8_t *buf, size_t *size)
 	if (h->trace.enabled && h->version.jtag >= STLINK_TRACE_MIN_VERSION) {
 			int res;
 			if (*size > 0) {
-                          res = stlink_tcp_read_trace(handle, (int *)buf, (int *)size);
+                          res = stlink_tcp_read_trace(handle, (int *)(void *)buf, (int *)(void *)size);
 			if (res != ERROR_OK)
 				return res;
 			return ERROR_OK;
@@ -850,8 +848,8 @@ static int stlink_tcp_open(struct hl_interface_param_s *param, void **fd)
                    CMD_PARSER();
                    sscanf(string[1], "%x", &h->device_id);
                    LOG_DEBUG("%x usb_key.", h->device_id);
-                   sscanf(string[2], "%x", (unsigned int *)&h->vid);
-                   sscanf(string[3], "%x", (unsigned int *)&h->pid);
+                   sscanf(string[2], "%x", (unsigned int *)(void *)&h->vid);
+                   sscanf(string[3], "%x", (unsigned int *)(void *)&h->pid);
                    LOG_DEBUG("PID = 0x%x, VID = 0x%x", h->pid, h->vid);
                  }
                }

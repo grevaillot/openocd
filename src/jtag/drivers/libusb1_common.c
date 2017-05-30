@@ -75,37 +75,6 @@ unsigned long compute_serial_str(unsigned char *descriptor,  char *str)
       return ERROR_OK;
 }
 
-/* Convert the serial number descriptor string from the device descriptor 
-   (possibly in wrong format with old devices) into a 24 characters string 
-   (hexadecimal representation of the 12-bytes STM32 unique ID) */
-unsigned long compute_serial_str(unsigned char *descriptor, char *str)
-{
-	int i;
-	int len = descriptor[0];
-
-	if (len == 26) {
-		/* Size value returned by the "old" ST-Link DFU;
-		 * In that case the DFU returns 12 8-bits values, separated by 12 zeros;
-		 * This is a bad encoding of Unicode characters, that we workaround here ... */
-		for (i = 0; i < 12; i++) {
-			/* Useful values reside at sNDescriptor[2],[4] ... [24]
-			 * Each 8-bits value will be expressed on 2 hexadecimal digits in sNString */
-			sprintf((char *) &(str[i * 2]), "%02hX", (unsigned short)descriptor[2 * (i + 1)]);
-		}
-	} else if (len == 50) {
-		/* Size value returned by the new ST-Link
-		 * In that case the DFU returns 24 Unicode characters;
-		 * Simply convert in 1-byte character string */
-		for (i = 0; i < 24; i++) {
-			str[i] = descriptor[2 * (i + 1)];
-		}
-	}
-	/* In any cases add a NULL terminating character */
-	str[24] = '\0';
-
-	return ERROR_OK;
-}
-
 /* Returns true if the string descriptor indexed by str_index in device matches string */
 static bool serial_descriptor_equal(libusb_device_handle *device, uint8_t str_index,
 	const uint8_t *serial_utf8, bool print_mismatch)
