@@ -296,13 +296,14 @@ static int stlink_tcp_init_mode(void *handle, int connect_under_reset)
         assert(handle != NULL);
 
 
-        sprintf(cmd_in, "stlink_tcp_init_mode %d %d\n", h->connect_id, connect_under_reset);
+        sprintf(cmd_in, "stlink-usb-init-mode %d %d\n", h->connect_id, connect_under_reset);
         if ( stlink_tcp_send_string(h, cmd_in, cmd_out) ) {
             	return ERROR_OK;
         } else {
          	return ERROR_FAIL;
         }
 }
+
 
 static int stlink_tcp_idcode(void *handle, uint32_t * idcode)
 {
@@ -796,7 +797,7 @@ static int stlink_tcp_open(struct hl_interface_param_s *param, void **fd)
           struct sockaddr_in serv;
           memset(&serv, 0, sizeof(struct sockaddr_in));
           serv.sin_family = AF_INET;
-          serv.sin_port = htons(4455);
+          serv.sin_port = htons(7184);
           serv.sin_addr.s_addr = inet_addr("127.0.0.1");
 
           LOG_DEBUG("socket : %x", h->socket);
