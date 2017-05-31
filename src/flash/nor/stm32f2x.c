@@ -329,9 +329,11 @@ static int stm32x_read_options(struct flash_bank *bank)
 	stm32x_info->option_bytes.user_options = optiondata & 0xec;
 	stm32x_info->option_bytes.RDP = (optiondata >> 8) & 0xff;
 	stm32x_info->option_bytes.protection = (optiondata >> 16) & 0xfff;
+	/* For device id 0x463 STM32F413xH */
+	if (!stm32x_info->has_large_mem && (bank->size > 1024))
+		stm32x_info->option_bytes.protection = (optiondata >> 16) & 0x7fff;
 
 	if (stm32x_info->has_large_mem) {
-
 		retval = target_read_u32(target, STM32_FLASH_OPTCR1, &optiondata);
 		if (retval != ERROR_OK)
 			return retval;
@@ -362,6 +364,9 @@ static int stm32x_write_options(struct flash_bank *bank)
 	optiondata = stm32x_info->option_bytes.user_options;
 	optiondata |= stm32x_info->option_bytes.RDP << 8;
 	optiondata |= (stm32x_info->option_bytes.protection & 0x0fff) << 16;
+	/* For device id 0x463 STM32F413xH */
+	if (!stm32x_info->has_large_mem && (bank->size > 1024))
+		optiondata |= (stm32x_info->option_bytes.protection & 0x7fff) << 16;
 
 	/* program options */
 	retval = target_write_u32(target, STM32_FLASH_OPTCR, optiondata);
@@ -369,7 +374,6 @@ static int stm32x_write_options(struct flash_bank *bank)
 		return retval;
 
 	if (stm32x_info->has_large_mem) {
-
 		uint32_t optiondata2 = 0;
 		optiondata2 |= (stm32x_info->option_bytes.protection & 0x00fff000) << 4;
 		retval = target_write_u32(target, STM32_FLASH_OPTCR1, optiondata2);
@@ -398,6 +402,7 @@ static int stm32x_write_options(struct flash_bank *bank)
 static int stm32x_protect_check(struct flash_bank *bank)
 {
 	struct stm32x_flash_bank *stm32x_info = bank->driver_priv;
+	int j = 0;
 
 	/* read write protection settings */
 	int retval = stm32x_read_options(bank);
@@ -407,7 +412,11 @@ static int stm32x_protect_check(struct flash_bank *bank)
 	}
 
 	for (int i = 0; i < bank->num_sectors; i++) {
-		if (stm32x_info->option_bytes.protection & (1 << i))
+		/* For device id 0x463 STM32F413xH the last 2 sector protection are on the same bit */
+		if (!stm32x_info->has_large_mem && (bank->size > 1024) && (i == bank->num_sectors-1))
+			j = 1;
+
+		if (stm32x_info->option_bytes.protection & (1 << (i-j)))
 			bank->sectors[i].is_protected = 0;
 		else
 			bank->sectors[i].is_protected = 1;
@@ -420,7 +429,6 @@ static int stm32x_erase(struct flash_bank *bank, int first, int last)
 {
 	struct target *target = bank->target;
 	struct stm32x_flash_bank *stm32x_info = bank->driver_priv;
-	int i;
 
 	assert(first < bank->num_sectors);
 	assert(last < bank->num_sectors);
@@ -446,11 +454,15 @@ static int stm32x_erase(struct flash_bank *bank, int first, int last)
 	4. Wait for the BSY bit to be cleared
 	 */
 
-	for (i = first; i <= last; i++) {
+	for (int i = first; i <= last; i++) {
 		if (stm32x_info->has_large_mem && stm32x_info->has_db1m && i > 7)
 			/* for dual bank on 1Mo devices, hole of 4 sectors between banks (bk1 sector 0-7, bk2 sector 12-19) */
 			retval = target_write_u32(target,
 				stm32x_get_flash_reg(bank, STM32_FLASH_CR), FLASH_SER | FLASH_SNB(i+HOLE_SECTORS) | FLASH_STRT);
+		/* For device id 0x463 STM32F413xH */
+		else if (!stm32x_info->has_large_mem && (bank->size > 1024))
+			retval = target_write_u32(target,
+				stm32x_get_flash_reg(bank, STM32_FLASH_CR), FLASH_SER | (i << 3) | FLASH_STRT);
 		else
 			retval = target_write_u32(target,
 				stm32x_get_flash_reg(bank, STM32_FLASH_CR), FLASH_SER | FLASH_SNB(i) | FLASH_STRT);
@@ -475,6 +487,7 @@ static int stm32x_protect(struct flash_bank *bank, int set, int first, int last)
 {
 	struct target *target = bank->target;
 	struct stm32x_flash_bank *stm32x_info = bank->driver_priv;
+	int j = 0;
 
 	if (target->state != TARGET_HALTED) {
 		LOG_ERROR("Target not halted");
@@ -489,11 +502,14 @@ static int stm32x_protect(struct flash_bank *bank, int set, int first, int last)
 	}
 
 	for (int i = first; i <= last; i++) {
+		/* For device id 0x463 STM32F413xH the last 2 sector protection are on the same bit */
+		if (!stm32x_info->has_large_mem && (bank->size > 1024) && (i == bank->num_sectors-1))
+			j = 1;
 
 		if (set)
-			stm32x_info->option_bytes.protection &= ~(1 << i);
+			stm32x_info->option_bytes.protection &= ~(1 << (i-j));
 		else
-			stm32x_info->option_bytes.protection |= (1 << i);
+			stm32x_info->option_bytes.protection |= (1 << (i-j));
 	}
 
 	retval = stm32x_write_options(bank);
@@ -775,7 +791,6 @@ static int stm32x_probe(struct flash_bank *bank)
 {
 	struct target *target = bank->target;
 	struct stm32x_flash_bank *stm32x_info = bank->driver_priv;
-	int i;
 	uint16_t flash_size_in_kb;
 	uint32_t flash_size_reg = 0x1FFF7A22;
 	uint16_t max_sector_size_in_kb = 128;
@@ -799,6 +814,9 @@ static int stm32x_probe(struct flash_bank *bank)
 	case 0x413:
 	case 0x441:
 		max_flash_size_in_kb = 1024;
+		break;
+	case 0x463:
+		max_flash_size_in_kb = 1536;
 		break;
 	case 0x419:
 	case 0x434:
@@ -851,8 +869,8 @@ static int stm32x_probe(struct flash_bank *bank)
 	/* calculate numbers of pages */
 	int num_pages = (flash_size_in_kb / max_sector_size_in_kb) + 4;
 
-	/* Devices with > 1024 kiByte always are dual-banked */
-	if (flash_size_in_kb > 1024)
+	/* Devices with > 1024 kiByte always are dual-banked (except STM32F413) */
+	if ((flash_size_in_kb > 1024) && ((device_id & 0xfff) != 0x463))
 		stm32x_info->has_large_mem = true;
 
 	/* F42x/43x & F46x/F47x 1024 kiByte devices have a dual bank option */
@@ -910,10 +928,13 @@ static int stm32x_probe(struct flash_bank *bank)
 			setup_sector(bank, 17, 7, 128 * 1024);
 		}
 	} else {
-		setup_sector(bank, 4 + 1, MIN(12, num_pages) - 5,
-					 max_sector_size_in_kb * 1024);
+		setup_sector(bank, 5, MIN(12, num_pages) - 5, max_sector_size_in_kb * 1024);
+		/* Add 4 big sectors for STM32F413 (16 sectors mono bank with last 11 sectors of 128K) */
+		if (((device_id & 0xfff) == 0x463) && (flash_size_in_kb > 1024))
+			setup_sector(bank, 12, 4, max_sector_size_in_kb * 1024);
 	}
-	for (i = 0; i < num_pages; i++) {
+
+	for (int i = 0; i < num_pages; i++) {
 		bank->sectors[i].is_erased = -1;
 		bank->sectors[i].is_protected = 0;
 	}
@@ -1012,6 +1033,7 @@ static int get_stm32x_info(struct flash_bank *bank, char *buf, int buf_size)
 	case 0x433:
 	case 0x458:
 	case 0x441:
+	case 0x463:
 		device_str = "STM32F4xx (Low Power)";
 
 		switch (rev_id) {
@@ -1151,8 +1173,7 @@ COMMAND_HANDLER(stm32x_handle_unlock_command)
 
 static int stm32x_mass_erase(struct flash_bank *bank)
 {
-	int retval;
-	uint32_t FLASH_MER_CMD = FLASH_MER;
+	uint32_t flash_mer_cmd = FLASH_MER;
 	struct target *target = bank->target;
 	struct stm32x_flash_bank *stm32x_info = NULL;
 
@@ -1163,20 +1184,20 @@ static int stm32x_mass_erase(struct flash_bank *bank)
 
 	stm32x_info = bank->driver_priv;
 
-	retval = stm32x_unlock_reg(target);
+	int retval = stm32x_unlock_reg(target);
 	if (retval != ERROR_OK)
 		return retval;
 
 	/* mass erase flash memory */
 	if (stm32x_info->has_large_mem)
-		FLASH_MER_CMD |= FLASH_MER1;
+		flash_mer_cmd |= FLASH_MER1;
 
-	retval = target_write_u32(target, stm32x_get_flash_reg(bank, STM32_FLASH_CR), FLASH_MER_CMD);
+	retval = target_write_u32(target, stm32x_get_flash_reg(bank, STM32_FLASH_CR), flash_mer_cmd);
 	if (retval != ERROR_OK)
 		return retval;
 
 	retval = target_write_u32(target, stm32x_get_flash_reg(bank, STM32_FLASH_CR),
-		FLASH_MER_CMD | FLASH_STRT);
+		flash_mer_cmd | FLASH_STRT);
 	if (retval != ERROR_OK)
 		return retval;
 
@@ -1193,8 +1214,6 @@ static int stm32x_mass_erase(struct flash_bank *bank)
 
 COMMAND_HANDLER(stm32x_handle_mass_erase_command)
 {
-	int i;
-
 	if (CMD_ARGC < 1) {
 		command_print(CMD_CTX, "stm32x mass_erase <bank>");
 		return ERROR_COMMAND_SYNTAX_ERROR;
@@ -1208,7 +1227,7 @@ COMMAND_HANDLER(stm32x_handle_mass_erase_command)
 	retval = stm32x_mass_erase(bank);
 	if (retval == ERROR_OK) {
 		/* set all sectors as erased */
-		for (i = 0; i < bank->num_sectors; i++)
+		for (int i = 0; i < bank->num_sectors; i++)
 			bank->sectors[i].is_erased = 1;
 
 		command_print(CMD_CTX, "stm32x mass erase complete");

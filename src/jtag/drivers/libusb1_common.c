@@ -83,20 +83,18 @@ static bool serial_descriptor_equal(libusb_device_handle *device, uint8_t str_in
 	bool matched;
 	unsigned char tbuf[255];
 	uint16_t langid;
-	uint8_t desc_utf16le[2+256*2+1];  /* Max size of string in UTF16 */
-					  /* plus 2 byte length  */
+	uint8_t desc_utf16le[2+256*2+1];  /* Max size of string in UTF16 (+ 2 byte length) */
 	uint8_t desc_utf8[256 + 1];
 
 	if (str_index == 0)
 		return false;
 
 	/* Asking for the zero'th index is special - it returns a string
-	   descriptor that contains all the language IDs supported by the device.
-	   Typically there aren't many - often only one. The language IDs are 16
-	   bit numbers, and they start at the third byte in the descriptor. See
-	   USB 2.0 specification section 9.6.7 for more information.
-	   Note from libusb 1.0 sources (descriptor.c) */
-
+	 * descriptor that contains all the language IDs supported by the device.
+	 * Typically there aren't many - often only one. The language IDs are 16
+	 * bit numbers, and they start at the third byte in the descriptor. See
+	 * USB 2.0 specification section 9.6.7 for more information.
+	 * Note from libusb 1.0 sources (descriptor.c) */
 	retval = libusb_get_string_descriptor(device, 0, 0, tbuf, sizeof(tbuf));
 	if (retval < 4) {
 		LOG_ERROR("libusb_get_descriptor() failed to obtain language id with %d",
@@ -186,16 +184,14 @@ static struct jtag_libusb_device_handle *iterate_devs(const uint16_t vids[], con
 		}
 
 		/* Device must be open to use libusb_get_string_descriptor. */
-		if (serial_utf8 != NULL &&
-				!serial_descriptor_equal(libusb_handle, dev_desc.iSerialNumber,
-							 (const uint8_t *)serial_utf8, print_mismatch)) {
-			libusb_close(libusb_handle);
-			continue;
-		}
-
 		if (print_mismatch) {
-			libusb_close(libusb_handle);
-			continue;
+			/* Device must be open to use libusb_get_string_descriptor. */
+			if (serial_utf8 != NULL &&
+					!serial_descriptor_equal(libusb_handle, dev_desc.iSerialNumber,
+									(const uint8_t *)serial_utf8, print_mismatch)) {
+				libusb_close(libusb_handle);
+				continue;
+			}
 		}
 
 		/* Success. */
@@ -213,8 +209,7 @@ int jtag_libusb_open(const uint16_t vids[], const uint16_t pids[],
 
 	ssize_t cnt = libusb_get_device_list(jtag_libusb_context, &devs);
 	if (cnt < 0) {
-		LOG_ERROR("libusb_get_device_list() failed with %s",
-			  libusb_error_name(cnt));
+	  LOG_ERROR("libusb_get_device_list() failed with %s", serial_utf8); 
 		return -ENODEV;
 	}
 

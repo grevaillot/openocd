@@ -33,6 +33,8 @@ struct hl_interface_param_s;
 /** */
 extern struct hl_layout_api_s stlink_usb_layout_api;
 extern struct hl_layout_api_s icdi_usb_layout_api;
+extern struct hl_layout_api_s stlink_tcp_layout_api;
+
 
 /** */
 struct hl_layout_api_s {

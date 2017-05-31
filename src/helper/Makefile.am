@@ -19,8 +19,8 @@ libhelper_la_SOURCES = \
 	util.c \
 	jep106.c \
 	jim-nvp.c \
-	unicode.c \
-	unicode.h
+	unicode.c
+
 if IOUTIL
 libhelper_la_SOURCES += ioutil.c
 else
@@ -50,7 +50,8 @@ noinst_HEADERS = \
 	jep106.h \
 	jep106.inc \
 	update_jep106.pl \
-	jim-nvp.h
+	jim-nvp.h \
+	unicode.h
 
 EXTRA_DIST = startup.tcl
 
