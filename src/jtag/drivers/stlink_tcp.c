@@ -827,7 +827,9 @@ static int stlink_tcp_open(struct hl_interface_param_s *param, void **fd)
          
          if (res == -1) 
            LOG_ERROR("Error setting socket opts: %s, SO_SNDBUF\n", strerror(errno));
-         
+
+         LOG_DEBUG("prepare to connect socket : %x", h->socket);
+
          /* short timeout */        
          if (connect(h->socket, (const struct sockaddr *) &serv, sizeof(serv)) >= 0) {
            LOG_DEBUG("socket connected.");
@@ -839,9 +841,10 @@ static int stlink_tcp_open(struct hl_interface_param_s *param, void **fd)
              
              // if card choseen by app get it else card 0
              stlink_tcp_send_string(h, "get-stlink-chosen\n", buf);
+	     LOG_DEBUG("get-stlink-chosen 0x%s", &buf[2]);	     
              
              unsigned int key;
-             sscanf(&buf[2], "%d", &key);
+             sscanf(&buf[2], "%x", &key);
              LOG_DEBUG("registred card %s, key %x", buf, key);
              if ( key > 0) {
                h->device_id = key;
@@ -857,30 +860,35 @@ static int stlink_tcp_open(struct hl_interface_param_s *param, void **fd)
                    LOG_DEBUG("PID = 0x%x, VID = 0x%x", h->pid, h->vid);
                  }
                }
-             
+
+             LOG_DEBUG("open-device : 0x%x", h->device_id);     
              sprintf(buf_in, "open-device %x\n", h->device_id);
-             if (stlink_tcp_send_string(h, buf_in, buf)) {
+             if ( stlink_tcp_send_string(h, buf_in, buf)) {
                
-               sscanf(&buf[2], "%d", (int *)&h->connect_id);
-               LOG_DEBUG("connect_id %d",(int)h->connect_id);
+		sscanf(&buf[2], "%d", (int *)&h->connect_id);
+		LOG_DEBUG("connect_id %d",(int)h->connect_id);
+
+		LOG_DEBUG("stlink_tcp_get_version");     
+	       
+		stlink_tcp_get_version(h);
                
-               stlink_tcp_get_version(h);
+		float v;
+		stlink_tcp_check_voltage(h, &v);
                
-               float v;
-               stlink_tcp_check_voltage(h, &v);
-               
-               /* cast to void */
-               *fd = (void *)h;
-               
-               
-               /* initialize the debug hardware , param->connect_under_reset*/
-               LOG_DEBUG("param->connect_under_reset %d",(int)param->connect_under_reset);
-               int err = stlink_tcp_init_mode(h, param->connect_under_reset);
-               LOG_DEBUG("return %d", err);
-               return ERROR_OK;
-             }
-                        } // get-nb-stlink
-                } // connect
+		/* cast to void */
+		*fd = (void *)h;
+                              
+		/* initialize the debug hardware , param->connect_under_reset*/
+		LOG_DEBUG("param->connect_under_reset %d",(int)param->connect_under_reset);
+		int err = stlink_tcp_init_mode(h, param->connect_under_reset);
+		LOG_DEBUG("return %d", err);
+		return ERROR_OK;
+             } else
+               LOG_DEBUG("open-device : return error");
+	     
+
+            } // get-nb-stlink
+          } // connect
         } // malloc
         
         return ERROR_FAIL;
