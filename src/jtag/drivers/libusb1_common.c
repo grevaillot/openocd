@@ -184,15 +184,18 @@ static struct jtag_libusb_device_handle *iterate_devs(const uint16_t vids[], con
 		}
 
 		/* Device must be open to use libusb_get_string_descriptor. */
-		if (print_mismatch) {
-			/* Device must be open to use libusb_get_string_descriptor. */
-			if (serial_utf8 != NULL &&
-					!serial_descriptor_equal(libusb_handle, dev_desc.iSerialNumber,
-									(const uint8_t *)serial_utf8, print_mismatch)) {
-				libusb_close(libusb_handle);
-				continue;
-			}
+		if (serial_utf8 != NULL &&
+				!serial_descriptor_equal(libusb_handle, dev_desc.iSerialNumber,
+							 (const uint8_t *)serial_utf8, print_mismatch)) {
+			libusb_close(libusb_handle);
+			continue;
 		}
+
+		if (print_mismatch) {
+			libusb_close(libusb_handle);
+			continue;
+		}
+
 
 		/* Success. */
 		return libusb_handle;
