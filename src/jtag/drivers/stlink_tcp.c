@@ -134,6 +134,7 @@ static bool stlink_tcp_send_string( void *handle, char *cmd_in, char *cmd_out);
 static int stlink_tcp_trace_enable(void *handle);
 static int stlink_tcp_get_version(void *handle);
 static int stlink_tcp_check_voltage(void *handle, float *target_voltage);
+static int stlink_usb_exit(void *handle);
 
 
 /////////////////////////////////////////////////////////////////////
@@ -144,6 +145,8 @@ static int stlink_tcp_close(void *handle)
 {
 	struct stlink_tcp_handle_s *h = handle;
 
+	/* exit from jtag mode */
+	stlink_usb_exit(h);
         LOG_DEBUG("close stlink socket");
         /* close socket */
         if (h != NULL) {
@@ -421,6 +424,22 @@ static int stlink_usb_get_version(void *handle, struct stlink_tcp_version *v)
           	sscanf(string[5], "%x", (unsigned int *)(void *)&v->pid);
           	sscanf(string[6], "%x", (unsigned int *)(void *)&v->vid);
           	return ERROR_OK;
+        } else {
+         	return ERROR_FAIL;
+        }
+}
+
+static int stlink_usb_exit(void *handle)
+{
+        struct stlink_tcp_handle_s *h = handle;
+        char cmd_in[BUFFER_LENGTH];
+        char cmd_out[BUFFER_LENGTH];
+
+        assert(handle != NULL);
+
+	sprintf(cmd_in, "stlink-exit-mode %d\n", h->connect_id); 
+        if ( stlink_tcp_send_string(h, cmd_in, cmd_out) ) {
+             	return ERROR_OK;
         } else {
          	return ERROR_FAIL;
         }
