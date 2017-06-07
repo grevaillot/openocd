@@ -558,7 +558,8 @@ static int stlink_tcp_write_mem(void *handle, uint32_t addr, uint32_t size, uint
         assert(handle != NULL);
 
 	if (size == 4 && count == 1) {
-		return stlink_tcp_write_debug_reg(handle, addr,  buffer[0]);
+		uint32_t v = *(uint32_t*)(void *)buffer; 
+		return stlink_tcp_write_debug_reg(handle, addr, v);	  
         } else {
 		sprintf(cmd_in, "stlink-tcp-write-mem %d %x %x %x %d\n", h->connect_id, addr , size, count, 0); 
 		if (stlink_tcp_write_string_mem(h, cmd_in, cmd_out, (char*)buffer, size * count)) {
@@ -863,6 +864,7 @@ static int stlink_tcp_open(struct hl_interface_param_s *param, void **fd)
 	     LOG_DEBUG("get-stlink-chosen 0x%s", &buf[2]);	     
              
              unsigned int key;
+	     /* skip the 1 space "1 xxxx"*/
              sscanf(&buf[2], "%x", &key);
              LOG_DEBUG("registred card %s, key %x", buf, key);
              if ( key > 0) {
