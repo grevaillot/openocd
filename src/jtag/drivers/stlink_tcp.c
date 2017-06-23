@@ -334,7 +334,7 @@ static int stlink_tcp_read_debug_reg(void *handle, int addr, int * val)
         int status;
 
         assert(handle != NULL);
-	sprintf(cmd_in, "stlink-tcp-read-debug-reg %x %x  %d\n", h->connect_id, addr, 0); 
+	sprintf(cmd_in, "stlink-tcp-read-debug-reg %d %x  %d\n", h->connect_id, addr, 0); 
 
         if ( stlink_tcp_send_string(h, cmd_in, cmd_out) ) {
             	sscanf(&cmd_out[2], "%d %x", &status, val);
