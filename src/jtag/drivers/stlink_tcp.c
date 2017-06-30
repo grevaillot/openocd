@@ -241,7 +241,7 @@ static bool stlink_tcp_read_string_mem(void *handle, char *cmd_in, char *cmd_out
         if ( stlink_tcp_send_string( h, cmd_in, cmd_out)) {
 
           unsigned int received =  0;
-          unsigned int received2 = 0;
+          int received2 = 0;
       
           char *buf = cmd_out;
           CMD_PARSER();
@@ -252,15 +252,29 @@ static bool stlink_tcp_read_string_mem(void *handle, char *cmd_in, char *cmd_out
           int ind = 0;
 
           do {
-            received2 = recv( h->socket, buffer + received, size_wanted - received, 0);
-            received += received2;
+		received2 = recv( h->socket, buffer + received, size_wanted - received, 0);
 
-            if ( received == size_wanted) {
-              completed = true;
-            } else {
-              ind ++;
-            }
+		if (received2 != -1) {
+			received += received2;
 
+			if (received == size_wanted)
+				completed = true;
+			else
+              			ind ++;
+
+			LOG_DEBUG("read the next transfert(%d) of %d byte", ind, received2);
+			
+            	} else {
+#ifdef _WIN32
+		  unsigned long err = WSAGetLastError();
+	          LOG_DEBUG("recv returned %d", (int)err);
+		  if ( err == WSAEWOULDBLOCK)
+		    Sleep(50);
+#else
+	          LOG_DEBUG("recv returned %d", errno);
+#endif		  
+		  
+		}
           } while( !completed);
 
           return true;
