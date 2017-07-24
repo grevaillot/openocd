@@ -906,10 +906,7 @@ static int stlink_tcp_open(struct hl_interface_param_s *param, void **fd)
 		LOG_DEBUG("stlink_tcp_get_version");     
 	       
 		stlink_tcp_get_version(h);
-               
-		float v;
-		stlink_tcp_check_voltage(h, &v);
-               
+
 		/* cast to void */
 		*fd = (void *)h;
                               
@@ -917,6 +914,11 @@ static int stlink_tcp_open(struct hl_interface_param_s *param, void **fd)
 		LOG_DEBUG("param->connect_under_reset %d",(int)param->connect_under_reset);
 		int err = stlink_tcp_init_mode(h, param->connect_under_reset);
 		LOG_DEBUG("return %d", err);
+
+                /* check voltage must be done after init_mode in stlink V2 */
+		float v;
+		stlink_tcp_check_voltage(h, &v);
+		
 		return ERROR_OK;
              } else
                LOG_DEBUG("open-device : return error");
