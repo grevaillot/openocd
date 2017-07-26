@@ -68,7 +68,7 @@
 /* "WAIT" responses will be retried (with exponential backoff) at
  * most this many times before failing to caller.
  */
-#define MAX_WAIT_RETRIES 8
+#define MAX_WAIT_RETRIES 12
 
 enum stlink_jtag_api_version {
 	STLINK_JTAG_API_V1 = 1,
@@ -1712,6 +1712,7 @@ static int stlink_speed(void *handle, int khz, bool query)
 				LOG_ERROR("Unable to set adapter speed");
 				return khz;
 			}
+			LOG_INFO("Stlink adapter speed set to %d kHz", jtag_stlink_khz_to_speed_map[speed_index].speed);
 		}
 
 		return jtag_stlink_khz_to_speed_map[speed_index].speed;
@@ -1755,6 +1756,7 @@ static int stlink_speed(void *handle, int khz, bool query)
 				LOG_ERROR("Unable to set adapter speed");
 				return khz;
 			}
+			LOG_INFO("Stlink adapter speed set to %d kHz", stlink_khz_to_speed_map[speed_index].speed);
 		}
 
 		return stlink_khz_to_speed_map[speed_index].speed;
