@@ -575,14 +575,13 @@ static int stm32x_write_block(struct flash_bank *bank, const uint8_t *buffer,
 		uint32_t offset, uint32_t count)
 {
 	struct target *target = bank->target;
-	uint32_t buffer_size = 16392;
+	uint32_t buffer_size = 16392; // 16384 -8 (loader args) isn't /32 bytes (flash block size)
 	struct working_area *write_algorithm;
 	struct working_area *source;
 	uint32_t address = bank->base + offset;
 	struct reg_param reg_params[5];
 	struct armv7m_algorithm armv7m_info;
 	struct stm32h7x_flash_bank *stm32x_info = bank->driver_priv;
-
 	int retval = ERROR_OK;
 
 	/* see contrib/loaders/flash/smt32h7x.S for src */
@@ -590,11 +589,14 @@ static int stm32x_write_block(struct flash_bank *bank, const uint8_t *buffer,
 								/*  <wait_fifo>: */
 		0xd0,0xf8, 0x00,0x80,	/* ldr 		r8, [r0, #0] */
 		0xb8,0xf1, 0x00,0x0f,	/* cmp 		r8, #0 */
-		0x25,0xd0,				/* beq 		exit */
+		0x28,0xd0,				/* beq 		exit */
 		0x47,0x68,				/* ldr 		r7, [r0, #4] */
 		0xb8,0xeb, 0x07,0x06,	/* subs		r6, r8, r7 */
-		0x1f,0x2e,				/* cmp 		r6, #31 */
-		0xf5,0xd3,				/* bcc 		wait_fifo */
+		0x44, 0xbf, 			/* itt 	mi */
+		0x76, 0x18, 			/* addmi	r6, r6, r1 */
+		0x36, 0x1a,				/* submi	r6, r6, r0 */
+		0x20,0x2e,				/* cmp 		r6, #32 */
+		0xf2,0xd3,				/* bcc 		wait_fifo */
 
 		0x4f,0xf0, 0x32,0x06,	/* mov		r6, #STM32_PROG */
 		0xe6,0x60,				/* str		r6, [r4, #STM32_FLASH_CR_OFFSET] */
@@ -622,7 +624,7 @@ static int stm32x_write_block(struct flash_bank *bank, const uint8_t *buffer,
 		0x47,0x60,				/* str 		r7, [r0, #4] */
 		0x01,0x3b,				/* subs		r3, r3, #1 */
 		0x13,0xb1,				/* cbz 		r3, exit */
-		0xd6,0xe7,				/* b		wait_fifo */
+		0xd3,0xe7,				/* b		wait_fifo */
 								/* <error>: */
 		0x00,0x21,				/* movs		r1, #0 */
 		0x41,0x60,				/* str		r1, [r0, #4] */

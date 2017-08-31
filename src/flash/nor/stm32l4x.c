@@ -107,6 +107,7 @@
 #define OPTKEY2        0x4C5D6E7F
 
 /* option bytes */
+#define DBANK      (1 << 22)	/* dual flash bank only */
 #define DUALBANK   (1 << 21)	/* dual flash bank only */
 #define WWWG_SW    (1 << 19)
 #define IWDG_STDBY (1 << 18)
@@ -116,7 +117,6 @@
 #define DBGMCU_IDCODE_REGISTER	0xE0042000
 #define FLASH_BANK0_ADDRESS 	0x08000000
 
-#define BUFFER_SIZE 16384
 
 struct stm32l4x_rev {
 	uint16_t rev;
@@ -181,6 +181,10 @@ static const struct stm32l4x_rev stm32_461_revs[] = {
 	{ 0x1000, "A" }, { 0x2000, "B" },
 };
 
+static const struct stm32l4x_rev stm32_470_revs[] = {
+	{ 0x1000, "A" }, { 0x1001, "Z" },
+};
+
 static struct stm32l4x_part_info stm32l4x_parts[] = {
 	{
 	  .id					= 0x415,
@@ -228,6 +232,19 @@ static struct stm32l4x_part_info stm32l4x_parts[] = {
 	  .device_str			= "STM32L49/L4Axx", /* 1M or 512K or 256K */
 	  .page_size			= 2048,
 	  .max_flash_size_kb	= 1024,
+	  .has_dual_bank		= 1,
+	  .first_bank_sectors	= 256,
+	  .hole_sectors			= 0,
+	  .flash_base			= 0x40022000,
+	  .fsize_base			= 0x1FFF75E0,
+	},
+	{
+	  .id					= 0x470,
+	  .revs					= stm32_470_revs,
+	  .num_revs				= ARRAY_SIZE(stm32_470_revs),
+	  .device_str			= "STM32L4R/L4Sxx", /* 2M */
+	  .page_size			= 4096, /* or 8192, depending on DBANK option bit */
+	  .max_flash_size_kb	= 2048,
 	  .has_dual_bank		= 1,
 	  .first_bank_sectors	= 256,
 	  .hole_sectors			= 0,
@@ -711,68 +728,24 @@ static int stm32x_write_block(struct flash_bank *bank, const uint8_t *buffer,
 				uint32_t offset, uint32_t count)
 {
 	struct target *target = bank->target;
-	uint32_t buffer_size = BUFFER_SIZE;
+	uint32_t buffer_size = 16384;
 	struct working_area *write_algorithm;
 	struct working_area *source;
 	uint32_t address = bank->base + offset;
-	struct reg_param reg_params[4];
+	struct reg_param reg_params[5];
 	struct armv7m_algorithm armv7m_info;
 	struct stm32l4x_flash_bank *stm32x_info = bank->driver_priv;
-
 	int retval = ERROR_OK;
 
-	/* see flash/smt32_flash_64.c for src */
+	/* see contrib/loaders/flash/stm32l4x.S for src */
 	static const uint8_t stm32x_flash_write_code[] = {
-		0x17, 0x4D,		/*		ldr	r5, .L11		*/
-		0x2C, 0x68,		/*		ldr	r4, [r5]		*/
-		0x44, 0xF0, 0x01, 0x04,	/*		orr	r4, r4, #1		*/
-		0x2C, 0x60,		/*		str	r4, [r5]		*/
-		0x00, 0x27,		/*		movs	r7, #0			*/
-		0x08, 0x39,		/*		subs	r1, r1, #8		*/
-		0x00, 0xF1, 0x08, 0x0C,	/*		add	ip, r0, #8		*/
-		0x14, 0x4E,		/*		ldr	r6, .L11+4		*/
-		0x1A, 0xE0,		/*		b	.L2			*/
-					/*	.L4:					*/
-		0x04, 0x68,		/*		ldr	r4, [r0]		*/
-		0xD4, 0xB1,		/*		cbz	r4, .L3			*/
-					/*	.L10:					*/
-		0x45, 0x68,		/*		ldr	r5, [r0, #4]		*/
-		0x04, 0x68,		/*		ldr	r4, [r0]		*/
-		0xA5, 0x42,		/*		cmp	r5, r4			*/
-		0xF9, 0xD0,		/*		beq	.L4			*/
-		0x02, 0xF1, 0x08, 0x0E,	/*		add	lr, r2, #8		*/
-		0x44, 0x68,		/*		ldr	r4, [r0, #4]		*/
-		0xD4, 0xE9, 0x00, 0x45,	/*		ldrd	r4, [r4]		*/
-		0xC2, 0xE9, 0x00, 0x45,	/*		strd	r4, [r2]		*/
-		0x42, 0x68,		/*		ldr	r2, [r0, #4]		*/
-		0x8A, 0x42,		/*		cmp	r2, r1			*/
-		0x2F, 0xBF,		/*		iteee	cs			*/
-		0xC0, 0xF8, 0x04, 0xC0,	/*		strcs	ip, [r0, #4]		*/
-		0x42, 0x68,		/*		ldrcc	r2, [r0, #4]		*/
-		0x08, 0x32,		/*		addcc	r2, r2, #8		*/
-		0x42, 0x60,		/*		strcc	r2, [r0, #4]		*/
-					/*	.L7:					*/
-		0x32, 0x68,		/*		ldr	r2, [r6]		*/
-		0x12, 0xF4, 0x80, 0x3F,	/*		tst	r2, #65536		*/
-		0xFB, 0xD1,		/*		bne	.L7			*/
-		0x01, 0x37,		/*		adds	r7, r7, #1		*/
-		0x72, 0x46,		/*		mov	r2, lr			*/
-					/*	.L2:					*/
-		0x9F, 0x42,		/*		cmp	r7, r3			*/
-		0xE4, 0xD1,		/*		bne	.L10			*/
-					/*	.L3:					*/
-		0x03, 0x4A,		/*		ldr	r2, .L11		*/
-		0x13, 0x68,		/*		ldr	r3, [r2]		*/
-		0x23, 0xF0, 0x01, 0x03,	/*		bic	r3, r3, #1		*/
-		0x13, 0x60,		/*		str	r3, [r2]		*/
-		0x02, 0x4B,		/*		ldr	r3, .L11+4		*/
-		0x18, 0x68,		/*		ldr	r0, [r3]		*/
-					/*	.L12:					*/
-		0x00, 0xBF,		/*		.align	2			*/
-					/*	.L11:					*/
-		0x14, 0x20, 0x02, 0x40,	/*		.word	1073881108		*/
-		0x10, 0x20, 0x02, 0x40,	/*		.word	1073881104		*/
-		0x00, 0xBE,		/*		bkpt	#0x00			*/
+		0x07, 0x68, 0x00, 0x2f, 0x23, 0xd0, 0x45, 0x68, 0x7e, 0x1b, 0x18, 0xd4, 
+		0x08, 0x2e, 0xf7, 0xd3, 0x01, 0x26, 0x66, 0x61, 0x40, 0xcd, 0x40, 0xc2, 
+		0xbf, 0xf3, 0x4f, 0x8f, 0x40, 0xcd, 0x40, 0xc2, 0xbf, 0xf3, 0x4f, 0x8f, 
+		0x26, 0x69, 0x76, 0x0c, 0xfc, 0xd2, 0x26, 0x69, 0xf6, 0xb2, 0x00, 0x2e, 
+		0x0b, 0xd1, 0x8d, 0x42, 0x06, 0xd2, 0x45, 0x60, 0x01, 0x3b, 0x08, 0xd0, 
+		0xe0, 0xe7, 0x0e, 0x44, 0x36, 0x1a, 0xe3, 0xe7, 0x05, 0x46, 0x08, 0x35, 
+		0xf5, 0xe7, 0x00, 0x21, 0x41, 0x60, 0x30, 0x46, 0x00, 0xbe
 	};
 
 	if (target_alloc_working_area(target, sizeof(stm32x_flash_write_code),
@@ -806,18 +779,20 @@ static int stm32x_write_block(struct flash_bank *bank, const uint8_t *buffer,
 	init_reg_param(&reg_params[1], "r1", 32, PARAM_OUT);		/* buffer end */
 	init_reg_param(&reg_params[2], "r2", 32, PARAM_OUT);		/* target address  */
 	init_reg_param(&reg_params[3], "r3", 32, PARAM_OUT);		/* count (word-64bit) */
+	init_reg_param(&reg_params[4], "r4", 32, PARAM_OUT);		/* flash_reg addr */
 
 	buf_set_u32(reg_params[0].value, 0, 32, source->address);
 	buf_set_u32(reg_params[1].value, 0, 32, source->address + source->size);
 	buf_set_u32(reg_params[2].value, 0, 32, address);
 	buf_set_u32(reg_params[3].value, 0, 32, count);
+	buf_set_u32(reg_params[4].value, 0, 32, stm32x_info->flash_base);
 
 	retval = target_run_flash_async_algorithm(target,
 						buffer,
 						count,
-						8,
+						8, /* Size of block in bytes */
 						0, NULL,
-						4, reg_params,
+						5, reg_params,
 						source->address,
 						source->size,
 						write_algorithm->address, 0,
@@ -846,6 +821,8 @@ static int stm32x_write_block(struct flash_bank *bank, const uint8_t *buffer,
 	destroy_reg_param(&reg_params[1]);
 	destroy_reg_param(&reg_params[2]);
 	destroy_reg_param(&reg_params[3]);
+	destroy_reg_param(&reg_params[4]);
+
 	return retval;
 }
 
@@ -881,11 +858,15 @@ static int stm32x_write(struct flash_bank *bank, const uint8_t *buffer,
 	if (retval != ERROR_OK)
 		return retval;
 
-	/* multiple words (8-byte) to be programmed */
-	retval = stm32x_write_block(bank, buffer, offset, count / 8);
+	/* multiple words (8-byte block) to be programmed */
+	retval = stm32x_write_block(bank, buffer, offset, count/8);
 
-	if ((retval != ERROR_OK) && (retval != ERROR_TARGET_RESOURCE_NOT_AVAILABLE))
+	if ((retval != ERROR_OK) && (retval != ERROR_TARGET_RESOURCE_NOT_AVAILABLE)) {
+		LOG_WARNING("block write failed");
 		return retval;
+	}
+
+	LOG_WARNING("block write succeeded");
 
 	return target_write_u32(target, stm32x_info->flash_base + FLASH_CR, FLASH_LOCK);
 }
@@ -943,8 +924,12 @@ static int stm32x_probe(struct flash_bank *bank)
 	if (stm32x_info->part_info->has_dual_bank) {
 		/* get options for DUAL BANK */
 		retval = target_read_u32(target, stm32x_info->flash_base + FLASH_OPTR, &options);
+		/* test DBANK option (Default Dual bank page_size = 4096) */
+		if (((device_id & 0xfff) == 0x470) && ((options & DBANK) == 0)) {
+			stm32x_info->part_info->page_size = 8192; /* Single bank */
+		}
 		/* test if dual bank on a smaller device (hole between banks for sector erase) */
-		if ((options & DUALBANK) && (flash_size_in_kb < stm32x_info->part_info->max_flash_size_kb)) {
+		else if ((options & DUALBANK) && (flash_size_in_kb < stm32x_info->part_info->max_flash_size_kb)) {
 			stm32x_info->part_info->first_bank_sectors = \
 						((flash_size_in_kb * 1024) / stm32x_info->part_info->page_size)/2;
 			stm32x_info->part_info->hole_sectors = \
