@@ -81,9 +81,9 @@ struct stlink_tcp_version {
 	int swim;
 	/** highest supported jtag api version */
 	/** */
-	unsigned short vid;
+	unsigned int vid;
 	/** */
-	unsigned short pid;
+	unsigned int pid;
 };
 
 /** */
@@ -424,23 +424,22 @@ static int stlink_tcp_trace_enable(void *handle)
 
 static int stlink_usb_get_version(void *handle, struct stlink_tcp_version *v)
 {
-        struct stlink_tcp_handle_s *h = handle;
-        char cmd_in[BUFFER_LENGTH];
-        char buf[BUFFER_LENGTH];
+	struct stlink_tcp_handle_s *h = handle;
+	char cmd_in[BUFFER_LENGTH];
+	char buf[BUFFER_LENGTH];
 
-        assert(handle != NULL);
-        sprintf(cmd_in, "stlink-tcp-version %d\n",  h->connect_id);
-        if ( stlink_tcp_send_string(h, cmd_in, buf)) {
-          	CMD_PARSER();
-         	sscanf(string[2], "%d", (unsigned int *)&v->stlink);
-          	sscanf(string[3], "%d", (unsigned int *)&v->jtag);
-          	sscanf(string[4], "%d", (unsigned int *)&v->swim);
-          	sscanf(string[5], "%x", (unsigned int *)(void *)&v->pid);
-          	sscanf(string[6], "%x", (unsigned int *)(void *)&v->vid);
-          	return ERROR_OK;
-        } else {
-         	return ERROR_FAIL;
-        }
+	assert(handle != NULL);
+	sprintf(cmd_in, "stlink-tcp-version %d\n",  h->connect_id);
+	if ( stlink_tcp_send_string(h, cmd_in, buf)) {
+		CMD_PARSER();
+		sscanf(string[2], "%d", (unsigned int *)&v->stlink);
+		sscanf(string[4], "%d", (unsigned int *)&v->jtag);
+		sscanf(string[5], "%d", (unsigned int *)&v->swim);
+		sscanf(string[6], "%x", (unsigned int *)&v->vid);
+		sscanf(string[7], "%x", (unsigned int *)&v->pid);		
+		return ERROR_OK;
+	} else
+		return ERROR_FAIL;
 }
 
 static int stlink_usb_exit(void *handle)
