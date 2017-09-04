@@ -38,7 +38,7 @@
 #include <target/cortex_m.h>
 
 #if WIN32
-#include <winsock2.h> 
+#include <winsock2.h>
 #else
 #include <sys/types.h>
 #include <sys/socket.h>
@@ -52,7 +52,7 @@
 
 #define CMD_PARSER()\
 	char string[15][80];\
-	const char  seps[5] = " ";\
+	const char seps[5] = " ";\
 	const char *prec = &buf[0];\
 	int i = 0;\
 	char *token = strtok((char *)prec, seps);\
@@ -92,7 +92,7 @@ struct stlink_tcp_handle_s {
 	unsigned int connect_id;
 
 	unsigned int device_id;
-  
+
 	int socket;
 	/** */
 	uint32_t max_mem_packet;
@@ -118,7 +118,7 @@ struct stlink_tcp_handle_s {
 	bool reconnect_pending;
 };
 
-#define STLINK_TRACE_SIZE               1024
+#define STLINK_TRACE_SIZE               4096
 #define STLINK_TRACE_MAX_HZ             2000000
 #define STLINK_TRACE_MIN_VERSION        13
 
@@ -143,7 +143,7 @@ static int stlink_tcp_close(void *handle)
 	if (h != NULL) {
 		/* exit from debug mode */
 		stlink_usb_exit(h);
-	
+
 		LOG_DEBUG("close stlink socket");
 		/* close socket */
 		close(h->socket);
@@ -198,9 +198,9 @@ static bool stlink_tcp_write_string_mem(void *handle, char *cmd_in, char *cmd_ou
 	msg_iov[1].iov_base = buf;
 	msg_iov[1].iov_len = len;
 
-	LOG_DEBUG("writev : cmd %s , len = %d, buf len = %d", (char *)msg_iov[0].iov_base, (unsigned int)msg_iov[0].iov_len,  (unsigned int)msg_iov[1].iov_len);
+	LOG_DEBUG("writev : cmd %s, len = %d, buf len = %d", (char *)msg_iov[0].iov_base, (unsigned int)msg_iov[0].iov_len, (unsigned int)msg_iov[1].iov_len);
 	unsigned int n = writev(h->socket, msg_iov, 2);
-	LOG_DEBUG("writev : returns %d", n); 
+	LOG_DEBUG("writev : returns %d", n);
 	if (n == len + strlen(cmd_in)) {
 		stlink_tcp_read_line(h, cmd_out);
 		return true;
@@ -236,7 +236,7 @@ static bool stlink_tcp_read_string_mem(void *handle, char *cmd_in, char *cmd_out
 	/* read the buffer after the string if the satus is correct */
 	if (stlink_tcp_send_string(h, cmd_in, cmd_out)) {
 
-		unsigned int received =  0;
+		unsigned int received = 0;
 		int received2 = 0;
 		char *buf = cmd_out;
 		CMD_PARSER();
@@ -270,8 +270,8 @@ static bool stlink_tcp_read_string_mem(void *handle, char *cmd_in, char *cmd_out
 		} while (!completed);
 
 		return true;
-	} 
-	else 
+	}
+	else
 		return false;
 }
 
@@ -314,7 +314,7 @@ static int stlink_tcp_idcode(void *handle, uint32_t * idcode)
 	int status;
 	assert(handle != NULL);
 
-	sprintf(cmd_in, "stlink-usb-idcode %x\n",  h->connect_id);
+	sprintf(cmd_in, "stlink-usb-idcode %x\n", h->connect_id);
 	if (stlink_tcp_send_string(h, cmd_in, cmd_out)) {
 		sscanf(&cmd_out[2], "%d %x", &status, idcode);
 		LOG_DEBUG("IDCODE: 0x%08" PRIX32, *idcode);
@@ -332,7 +332,7 @@ static int stlink_tcp_read_debug_reg(void *handle, int addr, int * val)
 	int status;
 	assert(handle != NULL);
 
-	sprintf(cmd_in, "stlink-tcp-read-debug-reg %d %x  %d\n", h->connect_id, addr, 0);
+	sprintf(cmd_in, "stlink-tcp-read-debug-reg %d %x %d\n", h->connect_id, addr, 0);
 	if (stlink_tcp_send_string(h, cmd_in, cmd_out)) {
 		sscanf(&cmd_out[2], "%d %x", &status, val);
 		return ERROR_OK;
@@ -348,7 +348,7 @@ static int stlink_tcp_write_debug_reg(void *handle, uint32_t addr, uint32_t val)
 	char cmd_out[BUFFER_LENGTH];
 	assert(handle != NULL);
 
-	sprintf(cmd_in, "stlink-tcp-write-debug-reg %d %x %x %d\n", h->connect_id, addr ,val, 0);
+	sprintf(cmd_in, "stlink-tcp-write-debug-reg %d %x %x %d\n", h->connect_id, addr, val, 0);
 	if (stlink_tcp_send_string(h, cmd_in, cmd_out)) {
 		return ERROR_OK;
 	} else {
@@ -406,10 +406,10 @@ static int stlink_usb_get_version(void *handle, struct stlink_tcp_version *v)
 	struct stlink_tcp_handle_s *h = handle;
 	char cmd_in[BUFFER_LENGTH];
 	char buf[BUFFER_LENGTH];
-
 	assert(handle != NULL);
-	sprintf(cmd_in, "stlink-tcp-version %d\n",  h->connect_id);
-	if ( stlink_tcp_send_string(h, cmd_in, buf)) {
+
+	sprintf(cmd_in, "stlink-tcp-version %d\n", h->connect_id);
+	if (stlink_tcp_send_string(h, cmd_in, buf)) {
 		CMD_PARSER();
 		sscanf(string[2], "%d", (unsigned int *)&v->stlink);
 		sscanf(string[4], "%d", (unsigned int *)&v->jtag);
@@ -476,7 +476,7 @@ static int stlink_tcp_reset(void *handle)
 	char cmd_out[BUFFER_LENGTH];
 	assert(handle != NULL);
 
-	LOG_DEBUG("stlink-usb-reset"); 
+	LOG_DEBUG("stlink-usb-reset");
 	sprintf(cmd_in, "stlink-usb-reset %d\n", h->connect_id);
 	if (stlink_tcp_send_string(h, cmd_in, cmd_out)) {
 		return ERROR_OK;
@@ -526,7 +526,7 @@ static int stlink_tcp_write_reg(void *handle, int num, uint32_t val)
 	assert(handle != NULL);
 	LOG_DEBUG("%s", __func__);
 
-	sprintf(cmd_in, "stlink-tcp-write-reg %d %x %x %x\n", h->connect_id, num , val, 0);
+	sprintf(cmd_in, "stlink-tcp-write-reg %d %x %x %x\n", h->connect_id, num, val, 0);
 	if (stlink_tcp_send_string(h, cmd_in, cmd_out)) {
 		return ERROR_OK;
 	} else {
@@ -542,10 +542,10 @@ static int stlink_tcp_write_mem(void *handle, uint32_t addr, uint32_t size, uint
 	assert(handle != NULL);
 
 	if (size == 4 && count == 1) {
-		uint32_t v = *(uint32_t*)(void *)buffer; 
+		uint32_t v = *(uint32_t*)(void *)buffer;
 		return stlink_tcp_write_debug_reg(handle, addr, v);
 	} else {
-		sprintf(cmd_in, "stlink-tcp-write-mem %d %x %x %x %d\n", h->connect_id, addr , size, count, 0);
+		sprintf(cmd_in, "stlink-tcp-write-mem %d %x %x %x %d\n", h->connect_id, addr, size, count, 0);
 		if (stlink_tcp_write_string_mem(h, cmd_in, cmd_out, (char*)buffer, size * count)) {
 			return ERROR_OK;
 		} else
@@ -563,7 +563,7 @@ static int stlink_tcp_read_mem(void *handle, uint32_t addr, uint32_t size, uint3
 	if (size == 4 && count == 1) {
 		return stlink_tcp_read_debug_reg(handle, addr, (int*)(void *)buffer);
 	} else {
-		sprintf(cmd_in, "stlink-tcp-read-mem %d %x %x %x %x\n",  h->connect_id, addr , size, count, 0);
+		sprintf(cmd_in, "stlink-tcp-read-mem %d %x %x %x %x\n", h->connect_id, addr, size, count, 0);
 
 		if (stlink_tcp_read_string_mem(h, cmd_in, (char *) cmd_out, (char*)buffer, size * count)) {
 			return ERROR_OK;
@@ -581,7 +581,7 @@ static int stlink_tcp_speed(void *handle, int khz, bool query)
 	int khz_choosen = 1800;
 
 	if (handle) {
-		sprintf(cmd_in, "stlink-tcp-speed %d %x %x\n", h->connect_id, khz ,query); 
+		sprintf(cmd_in, "stlink-tcp-speed %d %x %x\n", h->connect_id, khz, query);
 		if (stlink_tcp_send_string(h, cmd_in, cmd_out)) {
 			sscanf(&cmd_out[2], "%d", &khz_choosen);
 			LOG_INFO("Match for requested speed %d kHz, using %d kHz", khz, khz_choosen);
@@ -597,7 +597,7 @@ static int stlink_tcp_config_trace(void *handle, int enabled, int e_pin_protocol
 	char cmd_out[BUFFER_LENGTH];
 	assert(handle != NULL);
 
-	sprintf(cmd_in, "stlink-tcp-config-trace %d %x %x %x\n", h->connect_id, enabled , e_pin_protocol , port_size); 
+	sprintf(cmd_in, "stlink-tcp-config-trace %d %x %x %x\n", h->connect_id, enabled, e_pin_protocol, port_size);
 	if (stlink_tcp_send_string(h, cmd_in, cmd_out)) {
 		sscanf(cmd_out, "%d", trace_freq);
 		return ERROR_OK;
@@ -624,7 +624,6 @@ static int stlink_tcp_get_version(void *handle)
 
 	return ERROR_OK;
 }
-
 
 static int stlink_tcp_check_voltage(void *handle, float *target_voltage)
 {
@@ -680,7 +679,7 @@ static int stlink_tcp_trace_enable_h(void *handle)
 
 	if (h->version.jtag >= STLINK_TRACE_MIN_VERSION) {
 		res = stlink_tcp_trace_enable(handle);
-		if (res == ERROR_OK)  {
+		if (res == ERROR_OK) {
 			h->trace.enabled = true;
 			LOG_DEBUG("Tracing: recording at %" PRIu32 "Hz", h->trace.source_hz);
 		}
@@ -702,7 +701,7 @@ static int stlink_tcp_reset_h(void *handle)
 	stlink_tcp_reset(h);
 	if (h->trace.enabled) {
 		stlink_tcp_trace_disable_h(h);
-		int ret =  stlink_tcp_trace_enable_h(h);
+		int ret = stlink_tcp_trace_enable_h(h);
 		return ret;
 	}
 	return ERROR_OK;
@@ -761,11 +760,11 @@ static int stlink_config_trace(void *handle, bool enabled, enum tpio_pin_protoco
 
 	if (*trace_freq > STLINK_TRACE_MAX_HZ) {
 		LOG_ERROR("ST-LINK doesn't support SWO frequency higher than %u",
-			  STLINK_TRACE_MAX_HZ);
+				STLINK_TRACE_MAX_HZ);
 		return ERROR_FAIL;
 	}
 
-	stlink_tcp_config_trace(h, enabled, pin_protocol,  port_size, trace_freq);
+	stlink_tcp_config_trace(h, enabled, pin_protocol, port_size, trace_freq);
 
 	if (!*trace_freq)
 		*trace_freq = STLINK_TRACE_MAX_HZ;
@@ -802,7 +801,7 @@ static int stlink_tcp_open(struct hl_interface_param_s *param, void **fd)
 					TCP_NODELAY,			/* name of option */
 					(char *)&flag,			/* the cast is historical cruft */
 					sizeof(int));			/* length of option value */
-		if (res == -1) 
+		if (res == -1)
 			LOG_ERROR("Error setting socket opts: %s, TCP_NODELAY\n", strerror(errno));
 
 		int a = 49152;
@@ -812,7 +811,7 @@ static int stlink_tcp_open(struct hl_interface_param_s *param, void **fd)
 					(char *)&a,				/* the cast is historical cruft */
 					sizeof(int));			/* length of option value */
 
-		if (res == -1) 
+		if (res == -1)
 			LOG_ERROR("Error setting socket opts: %s, SO_RCVBUF\n", strerror(errno));
 
 		res = setsockopt(h->socket,
@@ -821,7 +820,7 @@ static int stlink_tcp_open(struct hl_interface_param_s *param, void **fd)
 					(char *)&a,				/* the cast is historical cruft */
 					sizeof(int));			/* length of option value */
 
-		if (res == -1) 
+		if (res == -1)
 			LOG_ERROR("Error setting socket opts: %s, SO_SNDBUF\n", strerror(errno));
 
 		LOG_DEBUG("prepare to connect socket : %x", h->socket);
@@ -862,16 +861,18 @@ static int stlink_tcp_open(struct hl_interface_param_s *param, void **fd)
 				if (stlink_tcp_send_string(h, buf_in, buf)) {
 
 					sscanf(&buf[2], "%d", (int *)&h->connect_id);
-					LOG_DEBUG("connect_id %d",(int)h->connect_id);
+					LOG_DEBUG("connect_id %d", (int)h->connect_id);
 
 					LOG_DEBUG("stlink_tcp_get_version");
 					stlink_tcp_get_version(h);
 
+					h->transport = param->transport;
+
 					/* cast to void */
 					*fd = (void *)h;
 
-					/* initialize the debug hardware , param->connect_under_reset */
-					LOG_DEBUG("init mode with param->connect_under_reset %d",(int)param->connect_under_reset);
+					/* initialize the debug hardware with param->connect_under_reset */
+					LOG_DEBUG("init mode with param->connect_under_reset %d", (int)param->connect_under_reset);
 					int err = stlink_tcp_init_mode(h, param->connect_under_reset);
 					LOG_DEBUG("return %d", err);
 

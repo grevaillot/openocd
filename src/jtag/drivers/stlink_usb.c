@@ -129,6 +129,8 @@ struct stlink_usb_handle_s {
 	/** reconnect is needed next time we try to query the
 	 * status */
 	bool reconnect_pending;
+	/** whether stlink is entered in debug mode (JTAG or SWD) */
+	bool debug_mode_entered;
 };
 
 #define STLINK_DEBUG_ERR_OK            0x80
@@ -842,8 +844,7 @@ static enum stlink_mode stlink_get_mode(enum hl_transports t)
 	}
 }
 
-/** */
-static int stlink_usb_init_mode(void *handle, bool connect_under_reset)
+static int stlink_exit_mode (void *handle)
 {
 	int res;
 	uint8_t mode;
@@ -853,7 +854,6 @@ static int stlink_usb_init_mode(void *handle, bool connect_under_reset)
 	assert(handle != NULL);
 
 	res = stlink_usb_current_mode(handle, &mode);
-
 	if (res != ERROR_OK)
 		return res;
 
@@ -878,16 +878,39 @@ static int stlink_usb_init_mode(void *handle, bool connect_under_reset)
 	}
 
 	if (emode != STLINK_MODE_UNKNOWN) {
-		res = stlink_usb_mode_leave(handle, emode);
+		LOG_DEBUG("E-MODE: 0x%02X", emode);
 
+		res = stlink_usb_mode_leave(handle, emode);
 		if (res != ERROR_OK)
 			return res;
+
+		h->debug_mode_entered = false;
 	}
+
+	return ERROR_OK;
+}
+
+/** */
+static int stlink_usb_init_mode(void *handle, bool connect_under_reset)
+{
+	int res;
+	uint8_t mode;
+	enum stlink_mode emode;
+	struct stlink_usb_handle_s *h = handle;
+
+	assert(handle != NULL);
+
+	res = stlink_exit_mode (handle);
+	
+	if (res != ERROR_OK)
+		return res;
 
 	res = stlink_usb_current_mode(handle, &mode);
 
 	if (res != ERROR_OK)
 		return res;
+
+	LOG_DEBUG("MODE: 0x%02X", mode);
 
 	/* we check the target voltage here as an aid to debugging connection problems.
 	 * the stlink requires the target Vdd to be connected for reliable debugging.
@@ -911,8 +934,6 @@ static int stlink_usb_init_mode(void *handle, bool connect_under_reset)
 				LOG_ERROR("target voltage may be too low for reliable debugging");
 		}
 	}
-
-	LOG_DEBUG("MODE: 0x%02X", mode);
 
 	/* set selected mode */
 	emode = stlink_get_mode(h->transport);
@@ -1770,8 +1791,12 @@ static int stlink_usb_close(void *handle)
 {
 	struct stlink_usb_handle_s *h = handle;
 
-	if (h && h->fd)
+	if (h && h->fd) {
+		/* Leave debug mode (only if debug mode entered) */
+		if (h->debug_mode_entered)
+			stlink_exit_mode(h);
 		jtag_libusb_close(h->fd);
+	}
 
 	free(h);
 
@@ -1931,6 +1956,8 @@ static int stlink_usb_open(struct hl_interface_param_s *param, void **fd)
 		LOG_ERROR("init mode failed (unable to connect to the target)");
 		goto error_open;
 	}
+
+	h->debug_mode_entered = true;
 
 	if (h->transport == HL_TRANSPORT_JTAG) {
 		/* jtag clock speed only supported by stlink/v2 and for firmware >= 24 */
