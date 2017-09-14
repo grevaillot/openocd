@@ -291,14 +291,16 @@ static int stlink_tcp_assert_srst(void *handle, int srst)
 	}
 }
 
-static int stlink_tcp_init_mode(void *handle, int connect_under_reset)
+static int stlink_tcp_init_mode(void *handle, int connect_under_reset, int transport)
 {
 	struct stlink_tcp_handle_s *h = handle;
 	char cmd_in[BUFFER_LENGTH];
 	char cmd_out[BUFFER_LENGTH];
 	assert(handle != NULL);
 
-	sprintf(cmd_in, "stlink-usb-init-mode %d %d\n", h->connect_id, connect_under_reset);
+	LOG_INFO("init_mode : %d", transport);
+	
+	sprintf(cmd_in, "stlink-usb-init-mode %d %d %d\n", h->connect_id, connect_under_reset, transport);
 	if (stlink_tcp_send_string(h, cmd_in, cmd_out)) {
 		return ERROR_OK;
 	} else {
@@ -774,6 +776,7 @@ static int stlink_config_trace(void *handle, bool enabled, enum tpio_pin_protoco
 }
 
 
+
 static int stlink_tcp_open(struct hl_interface_param_s *param, void **fd)
 {
 	struct stlink_tcp_handle_s *h;
@@ -782,7 +785,6 @@ static int stlink_tcp_open(struct hl_interface_param_s *param, void **fd)
 	char buf_in[80];
 
 	h = (struct stlink_tcp_handle_s *)malloc(sizeof (struct stlink_tcp_handle_s));
-
 	if (h) {
 		h->socket = socket(AF_INET, SOCK_STREAM, 0);
 
@@ -863,19 +865,16 @@ static int stlink_tcp_open(struct hl_interface_param_s *param, void **fd)
 					sscanf(&buf[2], "%d", (int *)&h->connect_id);
 					LOG_DEBUG("connect_id %d", (int)h->connect_id);
 
-					LOG_DEBUG("stlink_tcp_get_version");
-					stlink_tcp_get_version(h);
-
-					h->transport = param->transport;
-
 					/* cast to void */
 					*fd = (void *)h;
 
-					/* initialize the debug hardware with param->connect_under_reset */
-					LOG_DEBUG("init mode with param->connect_under_reset %d", (int)param->connect_under_reset);
-					int err = stlink_tcp_init_mode(h, param->connect_under_reset);
-					LOG_DEBUG("return %d", err);
+					/* initialize the debug hardware , param->connect_under_reset */
+					LOG_DEBUG("init mode with param->connect_under_reset %d",(int)param->connect_under_reset);
+					stlink_tcp_init_mode(h, param->connect_under_reset, param->transport);
 
+					LOG_DEBUG("stlink_tcp_get_version");
+					stlink_tcp_get_version(h);
+					
 					/* check voltage must be done after init_mode in stlink V2 */
 					float v;
 					stlink_tcp_check_voltage(h, &v);
