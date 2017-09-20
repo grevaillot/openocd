@@ -129,7 +129,6 @@ struct stlink_tcp_handle_s {
 #define CHECK_RESPONSE()  buf[0] == '\1'
 
 static bool stlink_tcp_send_string(void *handle, char *cmd_in, char *cmd_out);
-static int stlink_tcp_trace_enable(void *handle);
 static int stlink_tcp_get_version(void *handle);
 static int stlink_tcp_check_voltage(void *handle, float *target_voltage);
 static int stlink_usb_exit(void *handle);
@@ -185,7 +184,7 @@ static bool stlink_tcp_send_string(void *handle, char *cmd_in, char *cmd_out)
 	return false;
 }
 
-static bool stlink_tcp_write_string_mem(void *handle, char *cmd_in, char *cmd_out, char * buf, int len)
+static bool stlink_tcp_write_string_mem(void *handle, char *cmd_in, char *cmd_out, char *buf, int len)
 {
 	struct stlink_tcp_handle_s *h = (struct stlink_tcp_handle_s *)handle;
 #ifndef _WIN32
@@ -229,13 +228,17 @@ static bool stlink_tcp_write_string_mem(void *handle, char *cmd_in, char *cmd_ou
 	return true;
 }
 
-static bool stlink_tcp_read_string_mem(void *handle, char *cmd_in, char *cmd_out, char * buffer, int len)
+static bool stlink_tcp_read_string_mem(void *handle, char *cmd_in, char *cmd_out, char *buffer, int len)
 {
 	struct stlink_tcp_handle_s *h = (struct stlink_tcp_handle_s *)handle;
 
-	/* read the buffer after the string if the satus is correct */
+	/* read the buffer after the string if the status is correct */
 	if (stlink_tcp_send_string(h, cmd_in, cmd_out)) {
-
+		int status;
+		sscanf(&cmd_out[2], "%d", &status);
+		if (status == 1) {
+			return true; // exit if status error
+		}
 		unsigned int received = 0;
 		int received2 = 0;
 		char *buf = cmd_out;
@@ -250,12 +253,12 @@ static bool stlink_tcp_read_string_mem(void *handle, char *cmd_in, char *cmd_out
 			if (received2 != -1) {
 				received += received2;
 
-			if (received == size_wanted)
-				completed = true;
-			else
-				ind ++;
+				if (received == size_wanted)
+					completed = true;
+				else
+					ind ++;
 
-			LOG_DEBUG("read the next transfert(%d) of %d byte", ind, received2);
+				LOG_DEBUG("read the next transfert(%d) of %d byte", ind, received2);
 
 			} else {
 #ifdef _WIN32
@@ -298,8 +301,8 @@ static int stlink_tcp_init_mode(void *handle, int connect_under_reset, int trans
 	char cmd_out[BUFFER_LENGTH];
 	assert(handle != NULL);
 
-	LOG_INFO("init_mode : %d", transport);
-	
+	LOG_DEBUG("init_mode : %d", transport);
+
 	sprintf(cmd_in, "stlink-usb-init-mode %d %d %d\n", h->connect_id, connect_under_reset, transport);
 	if (stlink_tcp_send_string(h, cmd_in, cmd_out)) {
 		return ERROR_OK;
@@ -308,7 +311,7 @@ static int stlink_tcp_init_mode(void *handle, int connect_under_reset, int trans
 	}
 }
 
-static int stlink_tcp_idcode(void *handle, uint32_t * idcode)
+static int stlink_tcp_idcode(void *handle, uint32_t *idcode)
 {
 	struct stlink_tcp_handle_s *h = handle;
 	char cmd_in[BUFFER_LENGTH];
@@ -326,7 +329,7 @@ static int stlink_tcp_idcode(void *handle, uint32_t * idcode)
 	}
 }
 
-static int stlink_tcp_read_debug_reg(void *handle, int addr, int * val)
+static int stlink_tcp_read_debug_reg(void *handle, int addr, int *val)
 {
 	struct stlink_tcp_handle_s *h = handle;
 	char cmd_in[BUFFER_LENGTH];
@@ -358,49 +361,25 @@ static int stlink_tcp_write_debug_reg(void *handle, uint32_t addr, uint32_t val)
 	}
 }
 
-static int stlink_tcp_read_trace(void *handle, int * buf, int *size)
+static int stlink_tcp_trace_read(void *handle, uint8_t *buf, size_t *size)
 {
 	struct stlink_tcp_handle_s *h = handle;
 	char cmd_in[BUFFER_LENGTH];
 	char cmd_out[BUFFER_LENGTH];
 	assert(handle != NULL);
 
-	sprintf(cmd_in, "stlink-tcp-trace-read %x %x\n", h->connect_id, *size);
-	if (stlink_tcp_read_string_mem(h, cmd_in, cmd_out, (char *)buf, *size)) {
-		return ERROR_OK;
-	} else {
-		return ERROR_FAIL;
+	if (h->version.jtag >= STLINK_TRACE_MIN_VERSION) {
+		if (*size > 0) {
+			sprintf(cmd_in, "stlink-usb-trace-read %d %d\n", h->connect_id, (int)*size);
+			if (stlink_tcp_read_string_mem(h, cmd_in, cmd_out, (char *)buf, *size)) {
+				return ERROR_OK;
+			} else {
+				return ERROR_FAIL;
+			}
+		}
 	}
-}
-
-static int stlink_tcp_trace_disable(void *handle)
-{
-	struct stlink_tcp_handle_s *h = handle;
-	char cmd_in[BUFFER_LENGTH];
-	char cmd_out[BUFFER_LENGTH];
-	assert(handle != NULL);
-
-	sprintf(cmd_in, "stlink-tcp-trace-disable %x\n", h->connect_id);
-	if (stlink_tcp_send_string(h, cmd_in, cmd_out)) {
-		return ERROR_OK;
-	} else {
-		return ERROR_FAIL;
-	}
-}
-
-static int stlink_tcp_trace_enable(void *handle)
-{
-	struct stlink_tcp_handle_s *h = handle;
-	char cmd_in[BUFFER_LENGTH];
-	char cmd_out[BUFFER_LENGTH];
-	assert(handle != NULL);
-
-	sprintf(cmd_in, "stlink-tcp-trace-enable %x\n", h->connect_id);
-	if (stlink_tcp_send_string(h, cmd_in, cmd_out)) {
-		return ERROR_OK;
-	} else {
-		return ERROR_FAIL;
-	}
+	*size = 0;
+	return ERROR_OK;
 }
 
 static int stlink_usb_get_version(void *handle, struct stlink_tcp_version *v)
@@ -502,7 +481,7 @@ static int stlink_tcp_read_regs(void *handle)
 	}
 }
 
-static int stlink_tcp_read_reg(void *handle, int num, uint32_t * val)
+static int stlink_tcp_read_reg(void *handle, int num, uint32_t *val)
 {
 	struct stlink_tcp_handle_s *h = handle;
 	char cmd_in[BUFFER_LENGTH];
@@ -536,7 +515,7 @@ static int stlink_tcp_write_reg(void *handle, int num, uint32_t val)
 	}
 }
 
-static int stlink_tcp_write_mem(void *handle, uint32_t addr, uint32_t size, uint32_t count, const uint8_t * buffer)
+static int stlink_tcp_write_mem(void *handle, uint32_t addr, uint32_t size, uint32_t count, const uint8_t *buffer)
 {
 	struct stlink_tcp_handle_s *h = handle;
 	char cmd_in[BUFFER_LENGTH];
@@ -555,7 +534,7 @@ static int stlink_tcp_write_mem(void *handle, uint32_t addr, uint32_t size, uint
 	}
 }
 
-static int stlink_tcp_read_mem(void *handle, uint32_t addr, uint32_t size, uint32_t count, uint8_t * buffer)
+static int stlink_tcp_read_mem(void *handle, uint32_t addr, uint32_t size, uint32_t count, uint8_t *buffer)
 {
 	struct stlink_tcp_handle_s *h = handle;
 	char cmd_in[BUFFER_LENGTH];
@@ -586,23 +565,44 @@ static int stlink_tcp_speed(void *handle, int khz, bool query)
 		sprintf(cmd_in, "stlink-tcp-speed %d %x %x\n", h->connect_id, khz, query);
 		if (stlink_tcp_send_string(h, cmd_in, cmd_out)) {
 			sscanf(&cmd_out[2], "%d", &khz_choosen);
-			LOG_INFO("Match for requested speed %d kHz, using %d kHz", khz, khz_choosen);
+			LOG_INFO("Unable to match requested speed %d kHz, using %d kHz", khz, khz_choosen);
 		}
 	}
 	return khz_choosen;
 }
 
-static int stlink_tcp_config_trace(void *handle, int enabled, int e_pin_protocol, int port_size, unsigned int * trace_freq)
+static int stlink_tcp_config_trace(void *handle, bool enabled, enum tpio_pin_protocol pin_protocol,
+									uint32_t port_size, unsigned int *trace_freq)
 {
 	struct stlink_tcp_handle_s *h = handle;
 	char cmd_in[BUFFER_LENGTH];
 	char cmd_out[BUFFER_LENGTH];
+	int status = -1;
+	int tcp_trace_freq;
 	assert(handle != NULL);
 
-	sprintf(cmd_in, "stlink-tcp-config-trace %d %x %x %x\n", h->connect_id, enabled, e_pin_protocol, port_size);
+	if (enabled && ((h->version.jtag < STLINK_TRACE_MIN_VERSION) || (pin_protocol != ASYNC_UART))) {
+		LOG_ERROR("The attached ST-LINK version doesn't support this trace mode");
+		return ERROR_FAIL;
+	}
+
+	if (*trace_freq > STLINK_TRACE_MAX_HZ) {
+		LOG_ERROR("ST-LINK doesn't support SWO frequency higher than %u",
+				STLINK_TRACE_MAX_HZ);
+		return ERROR_FAIL;
+	}
+
+	sprintf(cmd_in, "stlink-config-trace %d %x %x %x %d\n", h->connect_id, enabled, pin_protocol, port_size, *trace_freq);
 	if (stlink_tcp_send_string(h, cmd_in, cmd_out)) {
-		sscanf(cmd_out, "%d", trace_freq);
-		return ERROR_OK;
+		sscanf(&cmd_out[2], "%d %d", &status, &tcp_trace_freq);
+		if (status != -4) {
+			LOG_DEBUG("Tracing: disable");
+			LOG_DEBUG("Tracing: recording at %" PRIu32 "Hz", tcp_trace_freq);
+			*trace_freq = (unsigned int) tcp_trace_freq;
+			return ERROR_OK;
+		} else {
+			return ERROR_FAIL;
+		}
 	} else {
 		return ERROR_FAIL;
 	}
@@ -616,6 +616,9 @@ static int stlink_tcp_get_version(void *handle)
 	assert(handle != NULL);
 
 	stlink_usb_get_version(h, &v);
+
+	h->version.stlink = v.stlink;
+	h->version.jtag = v.jtag;
 
 	LOG_INFO("STLINK v%d JTAG v%d API v%d VID 0x%04X PID 0x%04X",
 		v.stlink,
@@ -635,77 +638,6 @@ static int stlink_tcp_check_voltage(void *handle, float *target_voltage)
 	stlink_usb_check_voltage(h, target_voltage);
 	LOG_INFO("Target voltage: %f", (float)*target_voltage);
 
-	return ERROR_OK;
-}
-
-/** */
-static int stlink_tcp_trace_read_h(void *handle, uint8_t *buf, size_t *size)
-{
-	struct stlink_tcp_handle_s *h = handle;
-	assert(handle != NULL);
-
-	if (h->trace.enabled && h->version.jtag >= STLINK_TRACE_MIN_VERSION) {
-		int res;
-		if (*size > 0) {
-			res = stlink_tcp_read_trace(handle, (int *)(void *)buf, (int *)(void *)size);
-			if (res != ERROR_OK)
-				return res;
-			return ERROR_OK;
-		}
-	}
-	*size = 0;
-	return ERROR_OK;
-}
-
-/** */
-static void stlink_tcp_trace_disable_h(void *handle)
-{
-	int res = ERROR_OK;
-	struct stlink_tcp_handle_s *h = handle;
-	assert(h != NULL);
-
-	stlink_tcp_trace_disable(h);
-
-	LOG_DEBUG("Tracing: disable");
-
-	if (res == ERROR_OK)
-		h->trace.enabled = false;
-}
-
-/** */
-static int stlink_tcp_trace_enable_h(void *handle)
-{
-	int res;
-	struct stlink_tcp_handle_s *h = handle;
-	assert(h != NULL);
-
-	if (h->version.jtag >= STLINK_TRACE_MIN_VERSION) {
-		res = stlink_tcp_trace_enable(handle);
-		if (res == ERROR_OK) {
-			h->trace.enabled = true;
-			LOG_DEBUG("Tracing: recording at %" PRIu32 "Hz", h->trace.source_hz);
-		}
-	} else {
-		LOG_ERROR("Tracing is not supported by this version.");
-		res = ERROR_FAIL;
-	}
-	return ERROR_OK;
-}
-
-/** */
-static int stlink_tcp_reset_h(void *handle)
-{
-	struct stlink_tcp_handle_s *h = handle;
-	assert(h != NULL);
-
-	LOG_DEBUG("RESET");
-
-	stlink_tcp_reset(h);
-	if (h->trace.enabled) {
-		stlink_tcp_trace_disable_h(h);
-		int ret = stlink_tcp_trace_enable_h(h);
-		return ret;
-	}
 	return ERROR_OK;
 }
 
@@ -750,33 +682,6 @@ static int stlink_tcp_override_target(const char *targetname)
 	return !strcmp(targetname, "cortex_m");
 }
 
-static int stlink_config_trace(void *handle, bool enabled, enum tpio_pin_protocol pin_protocol,
-			uint32_t port_size, unsigned int *trace_freq)
-{
-	struct stlink_tcp_handle_s *h = handle;
-
-	if (!enabled) {
-		stlink_tcp_trace_disable(h);
-		return ERROR_OK;
-	}
-
-	if (*trace_freq > STLINK_TRACE_MAX_HZ) {
-		LOG_ERROR("ST-LINK doesn't support SWO frequency higher than %u",
-				STLINK_TRACE_MAX_HZ);
-		return ERROR_FAIL;
-	}
-
-	stlink_tcp_config_trace(h, enabled, pin_protocol, port_size, trace_freq);
-
-	if (!*trace_freq)
-		*trace_freq = STLINK_TRACE_MAX_HZ;
-	h->trace.source_hz = *trace_freq;
-
-	return stlink_tcp_trace_enable(h);
-}
-
-
-
 static int stlink_tcp_open(struct hl_interface_param_s *param, void **fd)
 {
 	struct stlink_tcp_handle_s *h;
@@ -784,7 +689,7 @@ static int stlink_tcp_open(struct hl_interface_param_s *param, void **fd)
 	char buf[80];
 	char buf_in[80];
 
-	h = (struct stlink_tcp_handle_s *)malloc(sizeof (struct stlink_tcp_handle_s));
+	h = (struct stlink_tcp_handle_s *)calloc(1, sizeof (struct stlink_tcp_handle_s));
 	if (h) {
 		h->socket = socket(AF_INET, SOCK_STREAM, 0);
 
@@ -868,13 +773,13 @@ static int stlink_tcp_open(struct hl_interface_param_s *param, void **fd)
 					/* cast to void */
 					*fd = (void *)h;
 
-					/* initialize the debug hardware , param->connect_under_reset */
+					/* initialize the debug hardware with param->connect_under_reset and param->transport */
 					LOG_DEBUG("init mode with param->connect_under_reset %d",(int)param->connect_under_reset);
 					stlink_tcp_init_mode(h, param->connect_under_reset, param->transport);
 
 					LOG_DEBUG("stlink_tcp_get_version");
 					stlink_tcp_get_version(h);
-					
+
 					/* check voltage must be done after init_mode in stlink V2 */
 					float v;
 					stlink_tcp_check_voltage(h, &v);
@@ -885,7 +790,7 @@ static int stlink_tcp_open(struct hl_interface_param_s *param, void **fd)
 
 			} /* get-nb-stlink */
 		} /* connect */
-	} /* malloc */
+	} /* calloc */
 
 	return ERROR_FAIL;
 }
@@ -901,7 +806,7 @@ struct hl_layout_api_s stlink_tcp_layout_api = {
 	/** */
 	.state = stlink_tcp_state,
 	/** */
-	.reset = stlink_tcp_reset_h,
+	.reset = stlink_tcp_reset,
 	/** */
 	.assert_srst = stlink_tcp_assert_srst,
 	/** */
@@ -927,7 +832,7 @@ struct hl_layout_api_s stlink_tcp_layout_api = {
 	/** */
 	.speed = stlink_tcp_speed,
 	/** */
-	.config_trace = stlink_config_trace,
+	.config_trace = stlink_tcp_config_trace,
 	/** */
-	.poll_trace = stlink_tcp_trace_read_h,
+	.poll_trace = stlink_tcp_trace_read,
 };
