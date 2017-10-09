@@ -141,14 +141,15 @@ static int stlink_tcp_close(void *handle)
 
 	if (h != NULL) {
 		/* exit from debug mode */
-		stlink_usb_exit(h);
+		LOG_DEBUG("close stlink socket : h = %x", *  (unsigned int *)handle);
 
-		LOG_DEBUG("close stlink socket");
+		stlink_usb_exit(h);
 		/* close socket */
 		close(h->socket);
 		free(h);
-	}
-	return ERROR_OK;
+		return ERROR_OK;
+	} else
+		return ERROR_FAIL;
 }
 
 /** */
@@ -305,7 +306,10 @@ static int stlink_tcp_init_mode(void *handle, int connect_under_reset, int trans
 
 	sprintf(cmd_in, "stlink-usb-init-mode %d %d %d\n", h->connect_id, connect_under_reset, transport);
 	if (stlink_tcp_send_string(h, cmd_in, cmd_out)) {
-		return ERROR_OK;
+		if (cmd_out[2] != '0')
+			return ERROR_FAIL;
+		else
+			return ERROR_OK;
 	} else {
 		return ERROR_FAIL;
 	}
@@ -407,6 +411,7 @@ static int stlink_usb_exit(void *handle)
 	struct stlink_tcp_handle_s *h = handle;
 	char cmd_in[BUFFER_LENGTH];
 	char cmd_out[BUFFER_LENGTH];
+	
 	assert(handle != NULL);
 
 	sprintf(cmd_in, "stlink-exit-mode %d\n", h->connect_id);
@@ -775,7 +780,11 @@ static int stlink_tcp_open(struct hl_interface_param_s *param, void **fd)
 
 					/* initialize the debug hardware with param->connect_under_reset and param->transport */
 					LOG_DEBUG("init mode with param->connect_under_reset %d",(int)param->connect_under_reset);
-					stlink_tcp_init_mode(h, param->connect_under_reset, param->transport);
+					res = stlink_tcp_init_mode(h, param->connect_under_reset, param->transport);
+					if (res != ERROR_OK) {
+    				  		LOG_ERROR("init mode failed (unable to connect to the target)");
+						return res;
+					}
 
 					LOG_DEBUG("stlink_tcp_get_version");
 					stlink_tcp_get_version(h);
@@ -788,12 +797,19 @@ static int stlink_tcp_open(struct hl_interface_param_s *param, void **fd)
 				} else
 					LOG_ERROR("open failed (no matching adapter found)");
 
-			} /* get-nb-stlink */
-		} /* connect */
+			} else {
+				/* get-nb-stlink */
+				LOG_INFO("No board seen by server.");
+			}
+		} else {
+			/* connect */
+			LOG_INFO("Unable to connect to stlink-server.");
+		}
 	} /* calloc */
 
 	return ERROR_FAIL;
 }
+
 
 /** */
 struct hl_layout_api_s stlink_tcp_layout_api = {
