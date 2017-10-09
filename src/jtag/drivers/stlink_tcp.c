@@ -786,7 +786,7 @@ static int stlink_tcp_open(struct hl_interface_param_s *param, void **fd)
 
 					return ERROR_OK;
 				} else
-					LOG_DEBUG("open-device : return error");
+					LOG_ERROR("open failed (no matching adapter found)");
 
 			} /* get-nb-stlink */
 		} /* connect */
