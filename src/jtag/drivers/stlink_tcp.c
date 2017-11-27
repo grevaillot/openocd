@@ -141,9 +141,8 @@ static int stlink_tcp_close(void *handle)
 
 	if (h != NULL) {
 		/* exit from debug mode */
-		LOG_DEBUG("close stlink socket : h = %x", *  (unsigned int *)handle);
-
 		stlink_usb_exit(h);
+		LOG_DEBUG("close stlink socket");
 		/* close socket */
 		close(h->socket);
 		free(h);
@@ -372,7 +371,7 @@ static int stlink_tcp_trace_read(void *handle, uint8_t *buf, size_t *size)
 	char cmd_out[BUFFER_LENGTH];
 	assert(handle != NULL);
 
-	if (h->version.jtag >= STLINK_TRACE_MIN_VERSION) {
+	if (h->version.jtag >= STLINK_TRACE_MIN_VERSION || h->version.stlink == 3) {
 		if (*size > 0) {
 			sprintf(cmd_in, "stlink-usb-trace-read %d %d\n", h->connect_id, (int)*size);
 			if (stlink_tcp_read_string_mem(h, cmd_in, cmd_out, (char *)buf, *size)) {
@@ -411,7 +410,7 @@ static int stlink_usb_exit(void *handle)
 	struct stlink_tcp_handle_s *h = handle;
 	char cmd_in[BUFFER_LENGTH];
 	char cmd_out[BUFFER_LENGTH];
-	
+
 	assert(handle != NULL);
 
 	sprintf(cmd_in, "stlink-exit-mode %d\n", h->connect_id);
@@ -570,7 +569,8 @@ static int stlink_tcp_speed(void *handle, int khz, bool query)
 		sprintf(cmd_in, "stlink-tcp-speed %d %x %x\n", h->connect_id, khz, query);
 		if (stlink_tcp_send_string(h, cmd_in, cmd_out)) {
 			sscanf(&cmd_out[2], "%d", &khz_choosen);
-			LOG_INFO("Unable to match requested speed %d kHz, using %d kHz", khz, khz_choosen);
+			if (khz != khz_choosen && query)
+				LOG_INFO("Unable to match requested speed %d kHz, using %d kHz", khz, khz_choosen);
 		}
 	}
 	return khz_choosen;
@@ -586,7 +586,7 @@ static int stlink_tcp_config_trace(void *handle, bool enabled, enum tpio_pin_pro
 	int tcp_trace_freq;
 	assert(handle != NULL);
 
-	if (enabled && ((h->version.jtag < STLINK_TRACE_MIN_VERSION) || (pin_protocol != ASYNC_UART))) {
+	if (enabled && ((h->version.stlink <= 2 && h->version.jtag < STLINK_TRACE_MIN_VERSION) || (pin_protocol != ASYNC_UART))) {
 		LOG_ERROR("The attached ST-LINK version doesn't support this trace mode");
 		return ERROR_FAIL;
 	}
@@ -618,6 +618,8 @@ static int stlink_tcp_get_version(void *handle)
 {
 	struct stlink_tcp_handle_s *h = handle;
 	struct stlink_tcp_version v;
+	unsigned int api = 2;
+
 	assert(handle != NULL);
 
 	stlink_usb_get_version(h, &v);
@@ -625,10 +627,13 @@ static int stlink_tcp_get_version(void *handle)
 	h->version.stlink = v.stlink;
 	h->version.jtag = v.jtag;
 
+	if (h->version.stlink == 3)
+		api = 3;
+
 	LOG_INFO("STLINK v%d JTAG v%d API v%d VID 0x%04X PID 0x%04X",
 		v.stlink,
 		v.jtag,
-		2,
+		api,
 		v.vid,
 		v.pid);
 
@@ -782,7 +787,7 @@ static int stlink_tcp_open(struct hl_interface_param_s *param, void **fd)
 					LOG_DEBUG("init mode with param->connect_under_reset %d",(int)param->connect_under_reset);
 					res = stlink_tcp_init_mode(h, param->connect_under_reset, param->transport);
 					if (res != ERROR_OK) {
-    				  		LOG_ERROR("init mode failed (unable to connect to the target)");
+						LOG_ERROR("init mode failed (unable to connect to the target)");
 						return res;
 					}
 
