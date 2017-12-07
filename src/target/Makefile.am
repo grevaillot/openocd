@@ -9,19 +9,8 @@ endif
 SUBDIRS = openrisc
 libtarget_la_LIBADD = $(top_builddir)/src/target/openrisc/libopenrisc.la
 
-BIN2C		= $(top_srcdir)/src/helper/bin2char.sh
+EXTRA_DIST = startup.tcl
 
-DEBUG_HANDLER	= $(srcdir)/xscale/debug_handler.bin
-EXTRA_DIST = \
-	startup.tcl \
-	$(wildcard $(srcdir)/xscale/*)
-
-DEBUG_HEADER	= xscale_debug.inc
-BUILT_SOURCES = $(DEBUG_HEADER)
-CLEANFILES = $(DEBUG_HEADER)
-
-$(DEBUG_HEADER): $(DEBUG_HANDLER) $(BIN2C)
-	$(BIN2C) < $< > $@ || { rm -f $@; false; }
 
 METASOURCES = AUTO
 noinst_LTLIBRARIES = libtarget.la
@@ -41,6 +30,7 @@ libtarget_la_SOURCES = \
 	dsp563xx_once.c \
 	dsp5680xx.c \
 	hla_target.c
+
 
 TARGET_CORE_SRC = \
 	algorithm.c \
@@ -82,7 +72,15 @@ ARMV7_SRC = \
 	armv7m_trace.c \
 	cortex_m.c \
 	armv7a.c \
-	cortex_a.c
+	cortex_a.c \
+	ls1_sap.c
+
+ARMV8_SRC = \
+	armv8_dpm.c \
+	armv8_opcodes.c \
+	aarch64.c \
+	armv8.c \
+	armv8_cache.c
 
 ARM_DEBUG_SRC = \
 	arm_dpm.c \
@@ -100,7 +98,8 @@ ARM_DEBUG_SRC = \
 	etb.c \
 	etm.c \
 	$(OOCD_TRACE_FILES) \
-	etm_dummy.c
+	etm_dummy.c \
+	arm_cti.c
 
 AVR32_SRC = \
 	avr32_ap7k.c \
@@ -161,6 +160,10 @@ noinst_HEADERS = \
 	armv7a.h \
 	armv7m.h \
 	armv7m_trace.h \
+	armv8.h \
+	armv8_dpm.h \
+	armv8_opcodes.h \
+	armv8_cache.h \
 	avrt.h \
 	dsp563xx.h \
 	dsp563xx_once.h \
@@ -168,6 +171,7 @@ noinst_HEADERS = \
 	breakpoints.h \
 	cortex_m.h \
 	cortex_a.h \
+	aarch64.h \
 	embeddedice.h \
 	etb.h \
 	etm.h \
@@ -204,7 +208,8 @@ noinst_HEADERS = \
 	nds32_v3m.h \
 	nds32_aice.h \
 	lakemont.h \
-	x86_32_common.h
+	x86_32_common.h \
+	arm_cti.h
 
 ocddatadir = $(pkglibdir)
 nobase_dist_ocddata_DATA =

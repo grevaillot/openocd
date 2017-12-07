@@ -11,10 +11,6 @@ if USB_BLASTER_LIBFTDI
 USB_BLASTER_SRC += ublast_access_ftdi.c
 endif
 
-if USB_BLASTER_FTD2XX
-USB_BLASTER_SRC += ublast_access_ftd2xx.c
-endif
-
 if USB_BLASTER_2
 USB_BLASTER_SRC += ublast2_access_libusb.c
 endif

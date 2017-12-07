@@ -59,9 +59,6 @@ endif
 if DUMMY
 DRIVERFILES += dummy.c
 endif
-if FT2232_DRIVER
-DRIVERFILES += ft2232.c
-endif
 if FTDI
 DRIVERFILES += ftdi.c mpsse.c
 endif
@@ -148,7 +145,6 @@ endif
 noinst_HEADERS = \
 	bitbang.h \
 	bitq.h \
-	ftd2xx_common.h \
 	libusb0_common.h \
 	libusb1_common.h \
 	libusb_common.h \

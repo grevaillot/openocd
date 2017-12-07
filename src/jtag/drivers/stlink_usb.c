@@ -327,9 +327,6 @@ static const struct {
 
 static void stlink_usb_init_buffer(void *handle, uint8_t direction, uint32_t size);
 
-extern void get_device_serial_number(jtag_libusb_device_handle *dev, char *serial_code, int len);
-
-
 /** */
 static unsigned int stlink_usb_block(void *handle)
 {
@@ -1770,7 +1767,7 @@ static int stlink_usb_override_target(const char *targetname)
 }
 
 /** */
-int stlink_get_com_freq(void *handle, unsigned char swd_or_jtag, unsigned int *table_freq)
+static int stlink_get_com_freq(void *handle, unsigned char swd_or_jtag, unsigned int *table_freq)
 {
 	struct stlink_usb_handle_s *h = handle;
 	int i;
@@ -1805,7 +1802,7 @@ int stlink_get_com_freq(void *handle, unsigned char swd_or_jtag, unsigned int *t
 }
 
 /** */
-int stlink_set_com_freq(void *handle, unsigned char swd_or_jtag, unsigned int frequency)
+static int stlink_set_com_freq(void *handle, unsigned char swd_or_jtag, unsigned int frequency)
 {
 	struct stlink_usb_handle_s *h = handle;
 	int res;
@@ -1829,7 +1826,8 @@ int stlink_set_com_freq(void *handle, unsigned char swd_or_jtag, unsigned int fr
 }
 
 /** */
-int stlink_switch_stlink_freq(void *handle, int divisor)
+#if 0
+static int stlink_switch_stlink_freq(void *handle, int divisor)
 {
 	struct stlink_usb_handle_s *h = handle;
 	int res;
@@ -1849,9 +1847,10 @@ int stlink_switch_stlink_freq(void *handle, int divisor)
 
 	return res;
 }
+#endif
 
 /** */
-int stlink_speed_v3(void *handle, unsigned int *freq, unsigned int khz, bool query)
+static int stlink_speed_v3(void *handle, unsigned int *freq, unsigned int khz, bool query)
 {
 	struct stlink_usb_handle_s *h = handle;
 	unsigned int i, valid_freq_nb = 0;
@@ -1916,7 +1915,7 @@ int stlink_speed_v3(void *handle, unsigned int *freq, unsigned int khz, bool que
 }
 
 /** */
-int stlink_speed_v2(void *handle, int khz, bool query)
+static int stlink_speed_v2(void *handle, int khz, bool query)
 {
 	unsigned int i;
 	int speed_index = -1;
@@ -2292,8 +2291,8 @@ error_open:
 }
 
 /** */
-int stlink_config_trace(void *handle, bool enabled, enum tpio_pin_protocol pin_protocol,
-			uint32_t port_size, unsigned int *trace_freq)
+static int stlink_config_trace(void *handle, bool enabled, enum tpio_pin_protocol pin_protocol,
+							uint32_t port_size, unsigned int *trace_freq)
 {
 	struct stlink_usb_handle_s *h = handle;
 
