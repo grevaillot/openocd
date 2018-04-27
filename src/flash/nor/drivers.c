@@ -62,6 +62,7 @@ extern struct flash_driver stm32l4x_flash;
 extern struct flash_driver stm32f7x_flash;
 extern struct flash_driver stm32h7x_flash;
 extern struct flash_driver stmsmi_flash;
+extern struct flash_driver stmqspi_flash;
 extern struct flash_driver str7x_flash;
 extern struct flash_driver str9x_flash;
 extern struct flash_driver str9xpec_flash;
@@ -117,6 +118,7 @@ static struct flash_driver *flash_drivers[] = {
 	&stm32f7x_flash,
 	&stm32h7x_flash,
 	&stmsmi_flash,
+	&stmqspi_flash,
 	&str7x_flash,
 	&str9x_flash,
 	&str9xpec_flash,

@@ -45,6 +45,7 @@ NOR_DRIVERS = \
 	sim3x.c \
 	spi.c \
 	stmsmi.c \
+	stmqspi.c \
 	stellaris.c \
 	stm32f1x.c \
 	stm32f2x.c \
@@ -67,6 +68,7 @@ noinst_HEADERS = \
 	imp.h \
 	non_cfi.h \
 	ocl.h \
-	spi.h
+	spi.h \
+	stmqspi.h
 
 MAINTAINERCLEANFILES = $(srcdir)/Makefile.in

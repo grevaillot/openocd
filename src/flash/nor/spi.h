@@ -1,4 +1,7 @@
 /***************************************************************************
+ *   Copyright (C) 2018 by Andreas Bolsch                                  *
+ *   andreas.bolsch@mni.thm.de                                             *
+ *                                                                         *
  *   Copyright (C) 2012 by George Harris                                   *
  *   george@luminairecoffee.com                                            *
  *                                                                         *
@@ -22,9 +25,13 @@
 #ifndef OPENOCD_FLASH_NOR_SPI_H
 #define OPENOCD_FLASH_NOR_SPI_H
 
+#ifndef __ASSEMBLER__
+
 /* data structure to maintain flash ids from different vendors */
 struct flash_device {
 	char *name;
+	uint8_t read_cmd;
+	uint8_t pprog_cmd;
 	uint8_t erase_cmd;
 	uint8_t chip_erase_cmd;
 	uint32_t device_id;
@@ -33,9 +40,11 @@ struct flash_device {
 	unsigned long size_in_bytes;
 };
 
-#define FLASH_ID(n, es, ces, id, psize, ssize, size) \
+#define FLASH_ID(n, re, pp, es, ces, id, psize, ssize, size) \
 {	                        \
 	.name = n,              \
+	.read_cmd = re,         \
+	.pprog_cmd = pp,        \
 	.erase_cmd = es,        \
 	.chip_erase_cmd = ces,  \
 	.device_id = id,        \
@@ -46,16 +55,19 @@ struct flash_device {
 
 extern const struct flash_device flash_devices[];
 
+#endif
+
 /* fields in SPI flash status register */
-#define SPIFLASH_BSY_BIT		0x00000001 /* WIP Bit of SPI SR on SMI SR */
-#define SPIFLASH_WE_BIT			0x00000002 /* WEL Bit of SPI SR on SMI SR */
+#define	SPIFLASH_BSY		0
+#define SPIFLASH_BSY_BIT	(1 << SPIFLASH_BSY)	/* WIP Bit of SPI SR */
+#define	SPIFLASH_WE			1
+#define SPIFLASH_WE_BIT		(1 << SPIFLASH_WE)	/* WEL Bit of SPI SR */
 
 /* SPI Flash Commands */
 #define SPIFLASH_READ_ID		0x9F /* Read Flash Identification */
 #define SPIFLASH_READ_STATUS	0x05 /* Read Status Register */
 #define SPIFLASH_WRITE_ENABLE	0x06 /* Write Enable */
 #define SPIFLASH_PAGE_PROGRAM	0x02 /* Page Program */
-#define SPIFLASH_FAST_READ		0x0B /* Fast Read */
 #define SPIFLASH_READ			0x03 /* Normal Read */
 
 #endif /* OPENOCD_FLASH_NOR_SPI_H */
