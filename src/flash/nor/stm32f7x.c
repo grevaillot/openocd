@@ -868,7 +868,11 @@ static int stm32x_probe(struct flash_bank *bank)
 	assert(flash_size_in_kb != 0xffff);
 
 	/* calculate numbers of pages */
-	int num_pages = (flash_size_in_kb / stm32x_info->part_info->page_size) + 4;
+	int num_pages;
+	if (flash_size_in_kb == 0x40)
+		num_pages = (flash_size_in_kb / (stm32x_info->part_info->page_size / 8));
+	else
+		num_pages = (flash_size_in_kb / stm32x_info->part_info->page_size) + 4;
 
 	if (stm32x_info->part_info->has_dual_bank &&
 			((stm32x_info->option_bytes.user2_options & (1 << OPT_RDDUALBANK)) == 0))
@@ -886,7 +890,11 @@ static int stm32x_probe(struct flash_bank *bank)
 	bank->sectors = malloc(sizeof(struct flash_sector) * num_pages);
 	bank->size = 0;
 
-	if (stm32x_info->part_info->has_dual_bank && \
+	if (flash_size_in_kb == 0x40) {
+		/* Only a few sector */
+		setup_sector(bank, 0, num_pages, (stm32x_info->part_info->page_size/8) * 1024);
+	}
+	else if (stm32x_info->part_info->has_dual_bank && \
 			((stm32x_info->option_bytes.user2_options & (1 << OPT_RDDUALBANK)) == 0))
 	{
 		if (flash_size_in_kb < stm32x_info->part_info->max_flash_size_kb) {
