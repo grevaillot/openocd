@@ -115,6 +115,7 @@
 #define IDWG_SW    (1 << 16)
 
 #define DBGMCU_IDCODE_REGISTER	0xE0042000
+#define DBGMCU_IDCODE_G0_REG	0x40015800
 #define FLASH_BANK0_ADDRESS 	0x08000000
 
 
@@ -189,6 +190,10 @@ static const struct stm32l4x_rev stm32_464_revs[] = {
 	{ 0x1000, "A" },
 };
 
+static const struct stm32l4x_rev stm32_460_revs[] = {
+	{ 0x1000, "A" },
+};
+
 static struct stm32l4x_part_info stm32l4x_parts[] = {
 	{
 	  .id					= 0x415,
@@ -260,6 +265,19 @@ static struct stm32l4x_part_info stm32l4x_parts[] = {
 	  .revs					= stm32_464_revs,
 	  .num_revs				= ARRAY_SIZE(stm32_464_revs),
 	  .device_str			= "STM32L41/L42xx", /* 128K */
+	  .page_size			= 2048,
+	  .max_flash_size_kb	= 128,
+	  .has_dual_bank		= 0,
+	  .first_bank_sectors	= 64,
+	  .hole_sectors			= 0,
+	  .flash_base			= 0x40022000,
+	  .fsize_base			= 0x1FFF75E0,
+	},
+	{
+	  .id					= 0x460,
+	  .revs					= stm32_460_revs,
+	  .num_revs				= ARRAY_SIZE(stm32_460_revs),
+	  .device_str			= "STM32G07/G08xx", /* 128K */
 	  .page_size			= 2048,
 	  .max_flash_size_kb	= 128,
 	  .has_dual_bank		= 0,
@@ -879,11 +897,11 @@ static int stm32x_write(struct flash_bank *bank, const uint8_t *buffer,
 	retval = stm32x_write_block(bank, buffer, offset, count/8);
 
 	if ((retval != ERROR_OK) && (retval != ERROR_TARGET_RESOURCE_NOT_AVAILABLE)) {
-		LOG_WARNING("block write failed");
+		LOG_ERROR("block write failed");
 		return retval;
 	}
 
-	LOG_WARNING("block write succeeded");
+	LOG_INFO("block write succeeded");
 
 	return target_write_u32(target, stm32x_info->flash_base + FLASH_CR, FLASH_LOCK);
 }
@@ -895,7 +913,12 @@ static int stm32x_read_id_code(struct flash_bank *bank, uint32_t *id)
 	if (retval != ERROR_OK)
 		return retval;
 
-	return ERROR_OK;
+	/* STM32G0 parts will have 0 there, try reading the G0's location for
+	 * DBGMCU_IDCODE in case this is a G0 part. */
+	if (*id == 0)
+		retval = target_read_u32(bank->target, DBGMCU_IDCODE_G0_REG, id);
+
+	return retval;
 }
 
 static int stm32x_probe(struct flash_bank *bank)
@@ -924,7 +947,7 @@ static int stm32x_probe(struct flash_bank *bank)
 	}
 
 	if (!stm32x_info->part_info) {
-		LOG_WARNING("Cannot identify target as a STM32L4xx family.");
+		LOG_WARNING("Cannot identify target as a STM32L4xx or STM32G0xx family.");
 		return ERROR_FAIL;
 	}
 
@@ -1035,7 +1058,7 @@ static int get_stm32x_info(struct flash_bank *bank, char *buf, int buf_size)
 				stm32x_info->part_info->device_str, rev_id);
 		return ERROR_OK;
 	} else {
-		snprintf(buf, buf_size, "Cannot identify target as a STM32L4x");
+		snprintf(buf, buf_size, "Cannot identify target as a STM32L4x or STM32G0x");
 		return ERROR_FAIL;
 	}
 	return ERROR_OK;
