@@ -515,8 +515,8 @@ static int stlink_usb_error_check(void *handle)
 			LOG_DEBUG("Jtag write error");
 			return ERROR_FAIL;
 		case STLINK_JTAG_WRITE_VERIF_ERROR:
-			LOG_DEBUG("Jtag verify error");
-			return ERROR_FAIL;
+			LOG_DEBUG("Write verify error, ignoring");
+			return ERROR_OK;
 		case STLINK_JTAG_ALREADY_OPENED_IN_OTHER_MODE:
 			LOG_DEBUG("JTAG_ALREADY_OPENED_IN_OTHER_MODE");
 			return ERROR_FAIL;
