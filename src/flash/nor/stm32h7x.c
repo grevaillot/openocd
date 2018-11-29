@@ -61,10 +61,11 @@
 
 /* FLASH_SR register bits */
 #define FLASH_BSY      (1 << 0)  /* Operation in progress */
+#define FLASH_QW       (1 << 2)  /* Operation queue in progress */
 #define FLASH_WRPERR   (1 << 17) /* Write protection error */
 #define FLASH_PGSERR   (1 << 18) /* Programming sequence error */
 #define FLASH_STRBERR  (1 << 19) /* Strobe error */
-#define FLASH_INCERR   (1 << 21) /* Increment error */
+#define FLASH_INCERR   (1 << 21) /* Inconsistency error */
 #define FLASH_OPERR    (1 << 22) /* Operation error */
 #define FLASH_RDPERR   (1 << 23) /* Read Protection error */
 #define FLASH_RDSERR   (1 << 24) /* Secure Protection error */
@@ -203,7 +204,7 @@ static int stm32x_wait_status_busy(struct flash_bank *bank, int timeout)
 			return retval;
 		}
 
-		if ((status & FLASH_BSY) == 0)
+		if ((status & FLASH_QW) == 0)
 			break;
 
 		if (timeout-- <= 0) {
@@ -220,6 +221,8 @@ static int stm32x_wait_status_busy(struct flash_bank *bank, int timeout)
 
 	/* Clear error + EOP flags but report errors */
 	if (status & FLASH_ERROR) {
+		if (retval == ERROR_OK)
+			retval = ERROR_FAIL;
 		/* If this operation fails, we ignore it and report the original retval */
 		target_write_u32(target, stm32x_get_flash_reg(bank, FLASH_CCR), status);
 	}
@@ -403,7 +406,7 @@ static int stm32x_write_options(struct flash_bank *bank)
 	int timeout = FLASH_ERASE_TIMEOUT;
 	for (;;) {
 		uint32_t status;
-		retval = target_read_u32(target, FLASH_REG_BASE_B0 + FLASH_SR, &status);
+		retval = target_read_u32(target, FLASH_REG_BASE_B0 + FLASH_OPTCUR, &status);
 		if (retval != ERROR_OK) {
 			LOG_INFO("stm32x_write_options: wait_status_busy : error");
 			return retval;
@@ -468,6 +471,11 @@ static int stm32x_erase(struct flash_bank *bank, int first, int last)
 	if (retval != ERROR_OK)
 		return retval;
 
+	/* Clear error flags */
+	retval = target_write_u32(target, stm32x_get_flash_reg(bank, FLASH_CCR), FLASH_ERROR);
+	if (retval != ERROR_OK)
+		return retval;
+
 	/*
 	Sector Erase
 	To erase a sector, follow the procedure below:
@@ -495,7 +503,7 @@ static int stm32x_erase(struct flash_bank *bank, int first, int last)
 		retval = stm32x_wait_status_busy(bank, FLASH_ERASE_TIMEOUT);
 
 		if (retval != ERROR_OK) {
-			LOG_ERROR("erase time-out error sector %d", i);
+			LOG_ERROR("erase time-out or operation error sector %d", i);
 			return retval;
 		}
 		bank->sectors[i].is_erased = 1;
@@ -570,49 +578,13 @@ static int stm32x_write_block(struct flash_bank *bank, const uint8_t *buffer,
 
 	/* see contrib/loaders/flash/smt32h7x.S for src */
 	static const uint8_t stm32x_flash_write_code[] = {
-								/* <code>: */
-		0x45, 0x68,				/*		ldr		r5, [r0, #4] */
-								/* <wait_fifo>: */
-		0x06, 0x68,				/*		ldr		r6, [r0, #0] */
-		0x26, 0xb3,				/*		cbz		r6, <exit> */
-		0x76, 0x1b,				/*		subs	r6, r6, r5 */
-		0x42, 0xbf,				/*		ittt	mi */
-		0x76, 0x18,				/*		addmi	r6, r6, r1 */
-		0x36, 0x1a,				/*		submi	r6, r6, r0 */
-		0x08, 0x3e,				/*		submi	r6, #8 */
-		0x20, 0x2e,				/*		cmp		r6, #32 */
-		0xf6, 0xd3,				/*		bcc.n	<wait_fifo> */
-		0x4f, 0xf0, 0x32, 0x06,	/*		mov.w	r6, #STM32_PROG */
-		0xe6, 0x60,				/*		str		r6, [r4, #STM32_FLASH_CR_OFFSET] */
-		0x4f, 0xf0, 0x08, 0x07,	/*		mov.w	r7, #8 */
-								/* <write_flash>: */
-		0x55, 0xf8, 0x04, 0x6b,	/*		ldr.w	r6, [r5], #4 */
-		0x42, 0xf8, 0x04, 0x6b,	/*		str.w	r6, [r2], #4 */
-		0xbf, 0xf3, 0x4f, 0x8f,	/*		dsb		sy */
-		0x8d, 0x42,				/*		cmp		r5, r1 */
-		0x28, 0xbf,				/*		it		cs */
-		0x00, 0xf1, 0x08, 0x05,	/*		addcs.w	r5, r0, #8 */
-		0x01, 0x3f,				/*		subs	r7, #1 */
-		0xf3, 0xd1,				/*		bne.n	<write_flash> */
-								/* <busy>: */
-		0x26, 0x69,				/*		ldr		r6, [r4, #STM32_FLASH_SR_OFFSET] */
-		0x16, 0xf0, 0x01, 0x0f,	/*		tst.w	r6, #STM32_SR_BUSY_MASK */
-		0xfb, 0xd1,				/*		bne.n	<busy> */
-		0x05, 0x4f,				/*		ldr		r7, [pc, #20] ; (<stm32_sr_error_mask>) */
-		0x3e, 0x42,				/*		tst		r6, r7 */
-		0x03, 0xd1,				/*		bne.n	<error> */
-		0x45, 0x60,				/*		str		r5, [r0, #4] */
-		0x01, 0x3b,				/*		subs	r3, #1 */
-		0xdb, 0xd1,				/*		bne.n	<wait_fifo> */
-		0x01, 0xe0,				/*		b.n		<exit> */
-								/* <error>: */
-		0x00, 0x27,				/*		movs	r7, #0 */
-		0x47, 0x60,				/*		str		r7, [r0, #4] */
-								/* <exit>: */
-		0x30, 0x46,				/*		mov		r0, r6 */
-		0x00, 0xbe,				/*		bkpt	0x0000 */
-								/* <stm32_sr_error_mask>: */
-		0x00, 0x00, 0xee, 0x03	/*		.word	0x03ee0000 ; (STM32_SR_ERROR_MASK) */
+		0x45, 0x68, 0x06, 0x68, 0x66, 0xb3, 0x76, 0x1b, 0x42, 0xbf, 0x76, 0x18, 0x36, 0x1a, 0x08, 0x3e,
+		0x20, 0x2e, 0xf6, 0xd3, 0xdf, 0xf8, 0x50, 0x60, 0x66, 0x61, 0x12, 0x4e, 0xe6, 0x60, 0x4f, 0xf0,
+		0x08, 0x07, 0xbf, 0xf3, 0x4f, 0x8f, 0x55, 0xf8, 0x04, 0x6b, 0x42, 0xf8, 0x04, 0x6b, 0xbf, 0xf3,
+		0x4f, 0x8f, 0x8d, 0x42, 0x28, 0xbf, 0x00, 0xf1, 0x08, 0x05, 0x01, 0x3f, 0xf1, 0xd1, 0x00, 0xbf,
+		0x00, 0xbf, 0x00, 0xbf, 0x00, 0xbf, 0x26, 0x69, 0x16, 0xf0, 0x04, 0x0f, 0xfb, 0xd1, 0x06, 0x4f,
+		0x3e, 0x42, 0x03, 0xd1, 0x45, 0x60, 0x01, 0x3b, 0xd3, 0xd1, 0x01, 0xe0, 0x00, 0x27, 0x47, 0x60,
+		0x30, 0x46, 0x00, 0xbe, 0x32, 0x00, 0x00, 0x00, 0x00, 0x00, 0xee, 0x07
 	};
 
 	if (target_alloc_working_area(target, sizeof(stm32x_flash_write_code),
@@ -624,8 +596,10 @@ static int stm32x_write_block(struct flash_bank *bank, const uint8_t *buffer,
 	retval = target_write_buffer(target, write_algorithm->address,
 			sizeof(stm32x_flash_write_code),
 			stm32x_flash_write_code);
-	if (retval != ERROR_OK)
+	if (retval != ERROR_OK) {
+		target_free_working_area(target, write_algorithm);
 		return retval;
+	}
 
 	/* memory buffer */
 	while (target_alloc_working_area_try(target, buffer_size, &source) != ERROR_OK) {
