@@ -62,9 +62,10 @@
 
 #define STM32_FLASH_CR_OFFSET	0x0C	/* offset of CR register in FLASH struct */
 #define STM32_FLASH_SR_OFFSET	0x10	/* offset of SR register in FLASH struct */
+#define STM32_FLASH_CCR_OFFSET	0x14	/* offset of CCR register in FLASH struct */
 #define STM32_CR_PROG			0x00000032	/* PSIZE64 | PG */
-#define STM32_SR_BUSY_MASK		0x00000001	/* BSY */
-#define STM32_SR_ERROR_MASK		0x03ee0000	/* DBECCERR | SNECCERR | RDSERR | RDPERR | OPERR
+#define STM32_SR_QW_MASK		0x00000004	/* QW */
+#define STM32_SR_CCR_ERROR_MASK	0x07ee0000	/* DBECCERR | SNECCERR | RDSERR | RDPERR | OPERR
 											   | INCERR | STRBERR | PGSERR | WRPERR */
 
 code:
@@ -81,11 +82,15 @@ wait_fifo:
 	cmp		r6, #32				/* wait until 32 bytes are available */
 	bcc		wait_fifo
 
-	mov		r6, #STM32_CR_PROG
-	str		r6, [r4, #STM32_FLASH_CR_OFFSET]
+	ldr		r6, stm32_sr_ccr_error_mask
+	str		r6, [r4, #STM32_FLASH_CCR_OFFSET] /* Clear all error flags */
+
+	ldr		r6, stm32_pg
+	str		r6, [r4, #STM32_FLASH_CR_OFFSET] /* Write PG bit */
 
 	mov		r7, #8				/* program by 8 words = 32 bytes */
 write_flash:
+	dsb
 	ldr		r6, [r5], #0x04		/* read one word from src, increment ptr */
 	str		r6, [r2], #0x04		/* write one word to dst, increment ptr */
 	dsb
@@ -97,10 +102,10 @@ write_flash:
 
 busy:
 	ldr		r6, [r4, #STM32_FLASH_SR_OFFSET]
-	tst		r6, #STM32_SR_BUSY_MASK
+	tst		r6, #STM32_SR_QW_MASK
 	bne		busy				/* operation in progress, wait ... */
 
-	ldr		r7, stm32_sr_error_mask
+	ldr		r7, stm32_sr_ccr_error_mask
 	tst		r6, r7
 	bne		error				/* fail... */
 
@@ -117,5 +122,8 @@ exit:
 	mov		r0, r6				/* return status in r0 */
 	bkpt	#0x00
 
-stm32_sr_error_mask:
-	.word	STM32_SR_ERROR_MASK
+stm32_pg:
+	.word	STM32_CR_PROG
+
+stm32_sr_ccr_error_mask:
+	.word	STM32_SR_CCR_ERROR_MASK
