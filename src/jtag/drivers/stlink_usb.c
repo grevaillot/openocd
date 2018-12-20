@@ -63,9 +63,10 @@
 #define STLINK_V1_PID         (0x3744)
 #define STLINK_V2_PID         (0x3748)
 #define STLINK_V2_1_PID       (0x374B)
-#define STLINK_V3E_PID        (0x374E)
-#define STLINK_V3S_PID        (0x374F)
-
+#define STLINK_V2_1_NO_MSD_PID  (0x3752)
+#define STLINK_V3E_PID          (0x374E)
+#define STLINK_V3S_PID          (0x374F)
+#define STLINK_V3_2VCP_PID      (0x3753)
 
 /* the current implementation of the usb 1.1 (stlink v2) limits
  * 8 bit read/writes to max 64 bytes. 
@@ -655,7 +656,7 @@ static int stlink_usb_version(void *handle)
 
 	assert(handle != NULL);
 
-	if (h->pid == STLINK_V3E_PID || h->pid == STLINK_V3S_PID) {
+	if (h->pid == STLINK_V3E_PID || h->pid == STLINK_V3S_PID || h->pid == STLINK_V3_2VCP_PID) {
 		stlink_usb_init_buffer(handle, h->rx_ep, 16);
 		h->cmdbuf[h->cmdidx++] = STLINK_APIV3_GET_VERSION_EX;
 		res = stlink_usb_xfer(handle, h->databuf, 12);
@@ -700,7 +701,7 @@ static int stlink_usb_version(void *handle)
 
 	LOG_INFO("STLINK v%d%s JTAG v%d API v%d %s%d VID 0x%04X PID 0x%04X",
 		h->version.stlink,
-		(h->pid == STLINK_V2_1_PID) ? ".1" : "",
+		(h->pid == STLINK_V2_1_PID || h->pid == STLINK_V2_1_NO_MSD_PID) ? ".1" : "",
 		h->version.jtag,
 		h->version.jtag_api_max,
 		(h->pid == STLINK_V2_1_PID || (h->version.stlink == 3 && h->version.swim == 0)) ? "M" : "SWIM v",
@@ -2078,8 +2079,8 @@ static int stlink_usb_open(struct hl_interface_param_s *param, void **fd)
 
 	h->transport = param->transport;
 
-	const uint16_t vids[] = {param->vid, param->vid, param->vid, param->vid, param->vid, 0};
-	const uint16_t pids[] = {STLINK_V2_PID, STLINK_V2_1_PID, STLINK_V3E_PID, STLINK_V3S_PID, param->pid, 0};
+	const uint16_t vids[] = {param->vid, param->vid, param->vid, param->vid, param->vid, param->vid, param->vid, 0};
+	const uint16_t pids[] = {STLINK_V2_PID, STLINK_V2_1_PID, STLINK_V2_1_NO_MSD_PID, STLINK_V3E_PID, STLINK_V3S_PID, STLINK_V3_2VCP_PID, param->pid, 0};
 
 	LOG_DEBUG("transport: %d vid: 0x%04x pid: 0x%04x serial: %s",
 			param->transport, param->vid, param->pid,
@@ -2126,11 +2127,13 @@ static int stlink_usb_open(struct hl_interface_param_s *param, void **fd)
 				break;
 			case STLINK_V3E_PID:
 			case STLINK_V3S_PID:
+			case STLINK_V3_2VCP_PID:
 				h->version.stlink = 3;
 				h->tx_ep = STLINK_V2_1_TX_EP;
 				h->trace_ep = STLINK_V2_1_TRACE_EP;
 				break;
 			case STLINK_V2_1_PID:
+			case STLINK_V2_1_NO_MSD_PID:
 				h->version.stlink = 2;
 				h->tx_ep = STLINK_V2_1_TX_EP;
 				h->trace_ep = STLINK_V2_1_TRACE_EP;
