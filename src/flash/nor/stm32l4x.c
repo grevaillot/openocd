@@ -39,7 +39,7 @@
 #define FLASH_SR		0x10
 #define FLASH_CR		0x14
 #define FLASH_ECR		0x18
-#define FLASH_OPTR      0x20
+#define FLASH_OPTR		0x20
 #define FLASH_PCROP1SR	0x24
 #define FLASH_PCROP1ER	0x28
 #define FLASH_WRP1AR	0x2C
@@ -182,6 +182,10 @@ static const struct stm32l4x_rev stm32_461_revs[] = {
 	{ 0x1000, "A" }, { 0x2000, "B" },
 };
 
+static const struct stm32l4x_rev stm32_495_revs[] = {
+	{ 0x1000, "A" }, { 0x1001, "Z" }, { 0x2000, "B" }, { 0x2001, "Y" },
+};
+
 static const struct stm32l4x_rev stm32_470_revs[] = {
 	{ 0x1000, "A" }, { 0x1001, "Z" },
 };
@@ -245,6 +249,19 @@ static struct stm32l4x_part_info stm32l4x_parts[] = {
 	  .first_bank_sectors	= 256,
 	  .hole_sectors			= 0,
 	  .flash_base			= 0x40022000,
+	  .fsize_base			= 0x1FFF75E0,
+	},
+	{
+	  .id					= 0x495,
+	  .revs					= stm32_495_revs,
+	  .num_revs				= ARRAY_SIZE(stm32_495_revs),
+	  .device_str			= "STM32WBxx", /* 1M */
+	  .page_size			= 4096,
+	  .max_flash_size_kb	= 1024,
+	  .has_dual_bank		= 0,
+	  .first_bank_sectors	= 256,
+	  .hole_sectors			= 0,
+	  .flash_base			= 0x58004000,
 	  .fsize_base			= 0x1FFF75E0,
 	},
 	{
@@ -973,8 +990,8 @@ static int stm32x_probe(struct flash_bank *bank)
 			stm32x_info->part_info->first_bank_sectors = \
 						((flash_size_in_kb * 1024) / stm32x_info->part_info->page_size)/2;
 			stm32x_info->part_info->hole_sectors = \
-			            (((stm32x_info->part_info->max_flash_size_kb * 1024) / stm32x_info->part_info->page_size) /2) \
- 			            - stm32x_info->part_info->first_bank_sectors;
+						(((stm32x_info->part_info->max_flash_size_kb * 1024) / stm32x_info->part_info->page_size) /2) \
+						- stm32x_info->part_info->first_bank_sectors;
 		}
 	}
 
@@ -987,7 +1004,7 @@ static int stm32x_probe(struct flash_bank *bank)
 	}
 
 	/* calculate numbers of sectors */
-	uint32_t num_sectors =  (flash_size_in_kb * 1024) / stm32x_info->part_info->page_size;
+	uint32_t num_sectors = (flash_size_in_kb * 1024) / stm32x_info->part_info->page_size;
 
 	if (bank->sectors) {
 		free(bank->sectors);
@@ -1234,7 +1251,7 @@ COMMAND_HANDLER(stm32x_window_watchdog_selection)
 	if (ERROR_OK != retval)
 		return retval;
 
-	struct stm32l4x_flash_bank *stm32x_info =  bank->driver_priv;
+	struct stm32l4x_flash_bank *stm32x_info = bank->driver_priv;
 
 	retval = stm32x_unlock_reg(bank);
 	if (ERROR_OK != retval)
@@ -1274,7 +1291,7 @@ COMMAND_HANDLER(stm32x_watchdog_standby)
 	if (ERROR_OK != retval)
 		return retval;
 
-	struct stm32l4x_flash_bank *stm32x_info =  bank->driver_priv;
+	struct stm32l4x_flash_bank *stm32x_info = bank->driver_priv;
 
 	retval = stm32x_unlock_reg(bank);
 	if (ERROR_OK != retval)
@@ -1314,7 +1331,7 @@ COMMAND_HANDLER(stm32x_watchdog_stop)
 	if (ERROR_OK != retval)
 		return retval;
 
-	struct stm32l4x_flash_bank *stm32x_info =  bank->driver_priv;
+	struct stm32l4x_flash_bank *stm32x_info = bank->driver_priv;
 
 	retval = stm32x_unlock_reg(bank);
 	if (ERROR_OK != retval)
@@ -1354,7 +1371,7 @@ COMMAND_HANDLER(stm32x_watchdog_selection)
 	if (ERROR_OK != retval)
 		return retval;
 
-	struct stm32l4x_flash_bank *stm32x_info =  bank->driver_priv;
+	struct stm32l4x_flash_bank *stm32x_info = bank->driver_priv;
 
 	retval = stm32x_unlock_reg(bank);
 	if (ERROR_OK != retval)
