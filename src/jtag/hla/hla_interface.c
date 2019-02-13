@@ -35,7 +35,7 @@
 
 #include <target/target.h>
 
-static struct hl_interface_s hl_if = { {0, 0, 0, 0, 0, HL_TRANSPORT_UNKNOWN, false, -1}, 0, 0 };
+static struct hl_interface_s hl_if = { {0, 0, { 0 }, { 0 }, 0, HL_TRANSPORT_UNKNOWN, false, -1, 7184, 0}, 0, 0};
 
 int hl_interface_open(enum hl_transports tr)
 {
@@ -70,7 +70,7 @@ int hl_interface_init_target(struct target *t)
 	 * can setup the private pointer in the tap structure
 	 * if the interface match the tap idcode
 	 */
-	res = hl_if.layout->api->idcode(hl_if.handle, &t->tap->idcode);
+	res = hl_if.layout->api->idcode(hl_if.handle, &t->tap->idcode, t);
 
 	if (res != ERROR_OK)
 		return res;
@@ -131,7 +131,7 @@ static int hl_interface_execute_queue(void)
 
 int hl_interface_init_reset(void)
 {
-	/* incase the adapter has not already handled asserting srst
+	/* in case the adapter has not already handled asserting srst
 	 * we will attempt it again */
 	if (hl_if.param.connect_under_reset) {
 		jtag_add_reset(0, 1);
@@ -234,6 +234,54 @@ COMMAND_HANDLER(hl_interface_handle_serial_command)
 	return ERROR_OK;
 }
 
+
+COMMAND_HANDLER(hl_interface_handle_port_command)
+{
+	LOG_DEBUG("hl_interface_handle_port_command");
+
+	if (CMD_ARGC == 1) {
+		parse_ulong(CMD_ARGV[0], &hl_if.param.port);
+	} else {
+		LOG_ERROR("expected exactly one argument to hl_port <TCP/IP port>");
+	}
+
+	return ERROR_OK;
+}
+
+COMMAND_HANDLER(init_core)
+{
+	LOG_DEBUG("hl_interface_init_core");
+
+	if (CMD_ARGC == 1) {
+		parse_ulong(CMD_ARGV[0], &hl_if.param.current_core);
+	} else {
+		LOG_ERROR("expected exactly one argument to init core");
+	}
+
+	LOG_DEBUG("hl_interface_init_core : init core %d", (int)hl_if.param.current_core);
+	if (hl_if.layout->api->init_core)
+		return hl_if.layout->api->init_core(hl_if.handle, hl_if.param.current_core);
+
+	return ERROR_OK;
+}
+
+COMMAND_HANDLER(close_core)
+{
+	LOG_DEBUG("hl_interface_close_core");
+
+	if (CMD_ARGC == 1) {
+		parse_ulong(CMD_ARGV[0], &hl_if.param.current_core);
+	} else {
+		LOG_ERROR("expected exactly one argument to close core");
+	}
+
+	LOG_DEBUG("hl_interface_close_core : close core %d", (int)hl_if.param.current_core);
+	if (hl_if.layout->api->close_core)
+		return hl_if.layout->api->close_core(hl_if.handle, hl_if.param.current_core);
+
+	return ERROR_OK;
+}
+
 COMMAND_HANDLER(hl_interface_handle_layout_command)
 {
 	LOG_DEBUG("hl_interface_handle_layout_command");
@@ -264,15 +312,27 @@ COMMAND_HANDLER(hl_interface_handle_layout_command)
 
 COMMAND_HANDLER(hl_interface_handle_vid_pid_command)
 {
-	LOG_DEBUG("hl_interface_handle_vid_pid_command");
-
-	if (CMD_ARGC != 2) {
-		LOG_WARNING("ignoring extra IDs in hl_vid_pid (maximum is 1 pair)");
+	if (CMD_ARGC > HLA_MAX_USB_IDS * 2) {
+		LOG_WARNING("ignoring extra IDs in hla_vid_pid "
+			"(maximum is %d pairs)", HLA_MAX_USB_IDS);
+		CMD_ARGC = HLA_MAX_USB_IDS * 2;
+	}
+	if (CMD_ARGC < 2 || (CMD_ARGC & 1)) {
+		LOG_WARNING("incomplete hla_vid_pid configuration directive");
 		return ERROR_COMMAND_SYNTAX_ERROR;
 	}
 
-	COMMAND_PARSE_NUMBER(u16, CMD_ARGV[0], hl_if.param.vid);
-	COMMAND_PARSE_NUMBER(u16, CMD_ARGV[1], hl_if.param.pid);
+	unsigned i;
+	for (i = 0; i < CMD_ARGC; i += 2) {
+		COMMAND_PARSE_NUMBER(u16, CMD_ARGV[i], hl_if.param.vid[i / 2]);
+		COMMAND_PARSE_NUMBER(u16, CMD_ARGV[i + 1], hl_if.param.pid[i / 2]);
+	}
+
+	/*
+	 * Explicitly terminate, in case there are multiple instances of
+	 * hla_vid_pid.
+	 */
+	hl_if.param.vid[i / 2] = hl_if.param.pid[i / 2] = 0;
 
 	return ERROR_OK;
 }
@@ -308,6 +368,13 @@ static const struct command_registration hl_interface_command_handlers[] = {
 	 .usage = "serial_string",
 	 },
 	{
+	 .name = "hla_port",
+	 .handler = &hl_interface_handle_port_command,
+	 .mode = COMMAND_CONFIG,
+	 .help = "set the TCP/IP port for the adapter",
+	 .usage = "port_number",
+	 },
+	{
 	 .name = "hla_layout",
 	 .handler = &hl_interface_handle_layout_command,
 	 .mode = COMMAND_CONFIG,
@@ -320,6 +387,20 @@ static const struct command_registration hl_interface_command_handlers[] = {
 	 .mode = COMMAND_CONFIG,
 	 .help = "the vendor and product ID of the adapter",
 	 .usage = "(vid pid)* ",
+	 },
+	{
+	 .name = "init_core",
+	 .handler = &init_core,
+	 .mode = COMMAND_EXEC,
+	 .help = "initialize the access-point once by session",
+	 .usage = "ap_num",
+	 },
+	{
+	 .name = "close_core",
+	 .handler = &close_core,
+	 .mode = COMMAND_EXEC,
+	 .help = "at the end of a debug session, we must close the access-point",
+	 .usage = "ap_num",
 	 },
 	 {
 	 .name = "hla_command",

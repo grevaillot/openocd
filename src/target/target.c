@@ -105,6 +105,7 @@ extern struct target_type nds32_v3m_target;
 extern struct target_type or1k_target;
 extern struct target_type quark_x10xx_target;
 extern struct target_type quark_d20xx_target;
+extern struct target_type stm8_target;
 
 static struct target_type *target_types[] = {
 	&arm7tdmi_target,
@@ -136,6 +137,7 @@ static struct target_type *target_types[] = {
 	&or1k_target,
 	&quark_x10xx_target,
 	&quark_d20xx_target,
+	&stm8_target,
 #if BUILD_TARGET64
 	&aarch64_target,
 #endif
@@ -202,10 +204,6 @@ static const Jim_Nvp nvp_target_event[] = {
 	{ .value = TARGET_EVENT_RESET_ASSERT_POST,   .name = "reset-assert-post" },
 	{ .value = TARGET_EVENT_RESET_DEASSERT_PRE,  .name = "reset-deassert-pre" },
 	{ .value = TARGET_EVENT_RESET_DEASSERT_POST, .name = "reset-deassert-post" },
-	{ .value = TARGET_EVENT_RESET_HALT_PRE,      .name = "reset-halt-pre" },
-	{ .value = TARGET_EVENT_RESET_HALT_POST,     .name = "reset-halt-post" },
-	{ .value = TARGET_EVENT_RESET_WAIT_PRE,      .name = "reset-wait-pre" },
-	{ .value = TARGET_EVENT_RESET_WAIT_POST,     .name = "reset-wait-post" },
 	{ .value = TARGET_EVENT_RESET_INIT,          .name = "reset-init" },
 	{ .value = TARGET_EVENT_RESET_END,           .name = "reset-end" },
 
@@ -1101,7 +1099,7 @@ int target_add_breakpoint(struct target *target,
 		struct breakpoint *breakpoint)
 {
 	if ((target->state != TARGET_HALTED) && (breakpoint->type != BKPT_HARD)) {
-		LOG_WARNING("target %s is not halted", target_name(target));
+		LOG_WARNING("target %s is not halted (add breakpoint)", target_name(target));
 		return ERROR_TARGET_NOT_HALTED;
 	}
 	return target->type->add_breakpoint(target, breakpoint);
@@ -1111,7 +1109,7 @@ int target_add_context_breakpoint(struct target *target,
 		struct breakpoint *breakpoint)
 {
 	if (target->state != TARGET_HALTED) {
-		LOG_WARNING("target %s is not halted", target_name(target));
+		LOG_WARNING("target %s is not halted (add context breakpoint)", target_name(target));
 		return ERROR_TARGET_NOT_HALTED;
 	}
 	return target->type->add_context_breakpoint(target, breakpoint);
@@ -1121,7 +1119,7 @@ int target_add_hybrid_breakpoint(struct target *target,
 		struct breakpoint *breakpoint)
 {
 	if (target->state != TARGET_HALTED) {
-		LOG_WARNING("target %s is not halted", target_name(target));
+		LOG_WARNING("target %s is not halted (add hybrid breakpoint)", target_name(target));
 		return ERROR_TARGET_NOT_HALTED;
 	}
 	return target->type->add_hybrid_breakpoint(target, breakpoint);
@@ -1137,7 +1135,7 @@ int target_add_watchpoint(struct target *target,
 		struct watchpoint *watchpoint)
 {
 	if (target->state != TARGET_HALTED) {
-		LOG_WARNING("target %s is not halted", target_name(target));
+		LOG_WARNING("target %s is not halted (add watchpoint)", target_name(target));
 		return ERROR_TARGET_NOT_HALTED;
 	}
 	return target->type->add_watchpoint(target, watchpoint);
@@ -1151,7 +1149,7 @@ int target_hit_watchpoint(struct target *target,
 		struct watchpoint **hit_watchpoint)
 {
 	if (target->state != TARGET_HALTED) {
-		LOG_WARNING("target %s is not halted", target->cmd_name);
+		LOG_WARNING("target %s is not halted (hit watchpoint)", target->cmd_name);
 		return ERROR_TARGET_NOT_HALTED;
 	}
 
@@ -1180,7 +1178,7 @@ int target_step(struct target *target,
 int target_get_gdb_fileio_info(struct target *target, struct gdb_fileio_info *fileio_info)
 {
 	if (target->state != TARGET_HALTED) {
-		LOG_WARNING("target %s is not halted", target->cmd_name);
+		LOG_WARNING("target %s is not halted (gdb fileio)", target->cmd_name);
 		return ERROR_TARGET_NOT_HALTED;
 	}
 	return target->type->get_gdb_fileio_info(target, fileio_info);
@@ -1189,7 +1187,7 @@ int target_get_gdb_fileio_info(struct target *target, struct gdb_fileio_info *fi
 int target_gdb_fileio_end(struct target *target, int retcode, int fileio_errno, bool ctrl_c)
 {
 	if (target->state != TARGET_HALTED) {
-		LOG_WARNING("target %s is not halted", target->cmd_name);
+		LOG_WARNING("target %s is not halted (gdb fileio end)", target->cmd_name);
 		return ERROR_TARGET_NOT_HALTED;
 	}
 	return target->type->gdb_fileio_end(target, retcode, fileio_errno, ctrl_c);
@@ -1199,7 +1197,7 @@ int target_profiling(struct target *target, uint32_t *samples,
 			uint32_t max_num_samples, uint32_t *num_samples, uint32_t seconds)
 {
 	if (target->state != TARGET_HALTED) {
-		LOG_WARNING("target %s is not halted", target->cmd_name);
+		LOG_WARNING("target %s is not halted (profiling)", target->cmd_name);
 		return ERROR_TARGET_NOT_HALTED;
 	}
 	return target->type->profiling(target, samples, max_num_samples,
@@ -1402,7 +1400,6 @@ int target_register_trace_callback(int (*callback)(struct target *target,
 int target_register_timer_callback(int (*callback)(void *priv), int time_ms, int periodic, void *priv)
 {
 	struct target_timer_callback **callbacks_p = &target_timer_callbacks;
-	struct timeval now;
 
 	if (callback == NULL)
 		return ERROR_COMMAND_SYNTAX_ERROR;
@@ -1419,14 +1416,8 @@ int target_register_timer_callback(int (*callback)(void *priv), int time_ms, int
 	(*callbacks_p)->time_ms = time_ms;
 	(*callbacks_p)->removed = false;
 
-	gettimeofday(&now, NULL);
-	(*callbacks_p)->when.tv_usec = now.tv_usec + (time_ms % 1000) * 1000;
-	time_ms -= (time_ms % 1000);
-	(*callbacks_p)->when.tv_sec = now.tv_sec + (time_ms / 1000);
-	if ((*callbacks_p)->when.tv_usec > 1000000) {
-		(*callbacks_p)->when.tv_usec = (*callbacks_p)->when.tv_usec - 1000000;
-		(*callbacks_p)->when.tv_sec += 1;
-	}
+	gettimeofday(&(*callbacks_p)->when, NULL);
+	timeval_add_time(&(*callbacks_p)->when, 0, time_ms * 1000);
 
 	(*callbacks_p)->priv = priv;
 	(*callbacks_p)->next = NULL;
@@ -1521,8 +1512,8 @@ int target_call_event_callbacks(struct target *target, enum target_event event)
 		target_call_event_callbacks(target, TARGET_EVENT_GDB_HALT);
 	}
 
-	LOG_DEBUG("target event %i (%s)", event,
-			Jim_Nvp_value2name_simple(nvp_target_event, event)->name);
+	LOG_DEBUG("target event %i (%s) : core = %d", event,
+			Jim_Nvp_value2name_simple(nvp_target_event, event)->name, target->coreid);
 
 	target_handle_event(target, event);
 
@@ -1539,8 +1530,8 @@ int target_call_reset_callbacks(struct target *target, enum target_reset_mode re
 {
 	struct target_reset_callback *callback;
 
-	LOG_DEBUG("target reset %i (%s)", reset_mode,
-			Jim_Nvp_value2name_simple(nvp_reset_modes, reset_mode)->name);
+	LOG_DEBUG("target reset %i (%s) : core = %d", reset_mode,
+			Jim_Nvp_value2name_simple(nvp_reset_modes, reset_mode)->name, target->coreid);
 
 	list_for_each_entry(callback, &target_reset_callback_list, list)
 		callback->callback(target, reset_mode, callback->priv);
@@ -1561,14 +1552,8 @@ int target_call_trace_callbacks(struct target *target, size_t len, uint8_t *data
 static int target_timer_callback_periodic_restart(
 		struct target_timer_callback *cb, struct timeval *now)
 {
-	int time_ms = cb->time_ms;
-	cb->when.tv_usec = now->tv_usec + (time_ms % 1000) * 1000;
-	time_ms -= (time_ms % 1000);
-	cb->when.tv_sec = now->tv_sec + time_ms / 1000;
-	if (cb->when.tv_usec > 1000000) {
-		cb->when.tv_usec = cb->when.tv_usec - 1000000;
-		cb->when.tv_sec += 1;
-	}
+	cb->when = *now;
+	timeval_add_time(&cb->when, 0, cb->time_ms * 1000L);
 	return ERROR_OK;
 }
 
@@ -1612,9 +1597,7 @@ static int target_call_timer_callbacks_check_time(int checktime)
 
 		bool call_it = (*callback)->callback &&
 			((!checktime && (*callback)->periodic) ||
-			 now.tv_sec > (*callback)->when.tv_sec ||
-			 (now.tv_sec == (*callback)->when.tv_sec &&
-			  now.tv_usec >= (*callback)->when.tv_usec));
+			 timeval_compare(&now, &(*callback)->when) >= 0);
 
 		if (call_it)
 			target_call_timer_callback(*callback, &now);
@@ -1880,7 +1863,7 @@ static void target_destroy(struct target *target)
 
 	free(target->type);
 	free(target->trace_info);
-	free(target->cmd_name);
+	free((void*)target->cmd_name);
 	free(target);
 }
 
@@ -2033,8 +2016,7 @@ static int target_profiling_default(struct target *target, uint32_t *samples,
 			break;
 
 		gettimeofday(&now, NULL);
-		if ((sample_count >= max_num_samples) ||
-			((now.tv_sec >= timeout.tv_sec) && (now.tv_usec >= timeout.tv_usec))) {
+		if ((sample_count >= max_num_samples) || timeval_compare(&now, &timeout) >= 0) {
 			LOG_INFO("Profiling completed. %" PRIu32 " samples.", sample_count);
 			break;
 		}
@@ -2260,13 +2242,12 @@ int target_read_u32(struct target *target, target_addr_t address, uint32_t *valu
 
 	if (retval == ERROR_OK) {
 		*value = target_buffer_get_u32(target, value_buf);
-		LOG_DEBUG("address: " TARGET_ADDR_FMT ", value: 0x%8.8" PRIx32 "",
-				  address,
-				  *value);
+		LOG_DEBUG("address: " TARGET_ADDR_FMT ", value: 0x%8.8" PRIx32 " coreid %d",
+				address,
+				*value, target->coreid);
 	} else {
 		*value = 0x0;
-		LOG_DEBUG("address: " TARGET_ADDR_FMT " failed",
-				  address);
+		LOG_DEBUG("address: " TARGET_ADDR_FMT " failed", address);
 	}
 
 	return retval;
@@ -3121,6 +3102,10 @@ COMMAND_HANDLER(handle_md_command)
 		COMMAND_PARSE_NUMBER(uint, CMD_ARGV[1], count);
 
 	uint8_t *buffer = calloc(count, size);
+	if (buffer == NULL) {
+		LOG_ERROR("Failed to allocate md read buffer");
+		return ERROR_FAIL;
+	}
 
 	struct target *target = get_current_target(CMD_CTX);
 	int retval = fn(target, address, size, count, buffer);
@@ -3687,7 +3672,7 @@ COMMAND_HANDLER(handle_bp_command)
 				addr = 0;
 				return handle_bp_command_set(CMD_CTX, addr, asid, length, hw);
 			}
-
+			/* fallthrough */
 		case 4:
 			hw = BKPT_HARD;
 			COMMAND_PARSE_ADDRESS(CMD_ARGV[0], addr);
@@ -3843,7 +3828,7 @@ typedef unsigned char UNIT[2];  /* unit of profiling */
 
 /* Dump a gmon.out histogram file. */
 static void write_gmon(uint32_t *samples, uint32_t sampleNum, const char *filename, bool with_range,
-			uint32_t start_address, uint32_t end_address, struct target *target)
+			uint32_t start_address, uint32_t end_address, struct target *target, uint32_t duration_ms)
 {
 	uint32_t i;
 	FILE *f = fopen(filename, "w");
@@ -3911,7 +3896,8 @@ static void write_gmon(uint32_t *samples, uint32_t sampleNum, const char *filena
 	writeLong(f, min, target);			/* low_pc */
 	writeLong(f, max, target);			/* high_pc */
 	writeLong(f, numBuckets, target);	/* # of buckets */
-	writeLong(f, 100, target);			/* KLUDGE! We lie, ca. 100Hz best case. */
+	float sample_rate = sampleNum / (duration_ms / 1000.0);
+	writeLong(f, sample_rate, target);
 	writeString(f, "seconds");
 	for (i = 0; i < (15-strlen("seconds")); i++)
 		writeData(f, &zero, 1);
@@ -3960,6 +3946,7 @@ COMMAND_HANDLER(handle_profile_command)
 		return ERROR_FAIL;
 	}
 
+	uint64_t timestart_ms = timeval_ms();
 	/**
 	 * Some cores let us sample the PC without the
 	 * annoying halt/resume step; for example, ARMv7 PCSR.
@@ -3971,6 +3958,7 @@ COMMAND_HANDLER(handle_profile_command)
 		free(samples);
 		return retval;
 	}
+	uint32_t duration_ms = timeval_ms() - timestart_ms;
 
 	assert(num_of_samples <= MAX_PROFILE_SAMPLE_NUM);
 
@@ -4003,7 +3991,7 @@ COMMAND_HANDLER(handle_profile_command)
 	}
 
 	write_gmon(samples, num_of_samples, CMD_ARGV[1],
-		   with_range, start_address, end_address, target);
+		   with_range, start_address, end_address, target, duration_ms);
 	command_print(CMD_CTX, "Wrote %s", CMD_ARGV[1]);
 
 	free(samples);
@@ -4423,14 +4411,19 @@ void target_handle_event(struct target *target, enum target_event e)
 
 	for (teap = target->event_action; teap != NULL; teap = teap->next) {
 		if (teap->event == e) {
-			LOG_DEBUG("target: (%d) %s (%s) event: %d (%s) action: %s",
+			LOG_DEBUG("target(%d): %s (%s) event: %d (%s) action: %s",
 					   target->target_number,
 					   target_name(target),
 					   target_type_name(target),
 					   e,
 					   Jim_Nvp_value2name_simple(nvp_target_event, e)->name,
 					   Jim_GetString(teap->body, NULL));
-			if (Jim_EvalObj(teap->interp, teap->body) != JIM_OK) {
+			bool doReset = true;
+			if (teap->event == TARGET_EVENT_GDB_FLASH_ERASE_START || teap->event == TARGET_EVENT_GDB_FLASH_WRITE_END) {
+				if (target->first_reset)
+					doReset = false;
+			}
+			if (doReset && (Jim_EvalObj(teap->interp, teap->body) != JIM_OK)) {
 				Jim_MakeErrorMessage(teap->interp);
 				command_print(NULL, "%s\n", Jim_GetString(Jim_GetResult(teap->interp), NULL));
 			}
@@ -4465,6 +4458,7 @@ enum target_cfg_param {
 	TCFG_DBGBASE,
 	TCFG_CTIBASE,
 	TCFG_RTOS,
+	TCFG_AP_NUM,
 	TCFG_DEFER_EXAMINE,
 };
 
@@ -4481,6 +4475,7 @@ static Jim_Nvp nvp_config_opts[] = {
 	{ .name = "-dbgbase",          .value = TCFG_DBGBASE },
 	{ .name = "-ctibase",          .value = TCFG_CTIBASE },
 	{ .name = "-rtos",             .value = TCFG_RTOS },
+	{ .name = "-ap-num",           .value = TCFG_AP_NUM },
 	{ .name = "-defer-examine",    .value = TCFG_DEFER_EXAMINE },
 	{ .name = NULL, .value = -1 }
 };
@@ -4536,6 +4531,7 @@ no_params:
 					target_type_name(target), -1);
 			/* loop for more */
 			break;
+
 		case TCFG_EVENT:
 			if (goi->argc == 0) {
 				Jim_WrongNumArgs(goi->interp, goi->argc, goi->argv, "-event ?event-name? ...");
@@ -4676,7 +4672,6 @@ no_params:
 			/* loop for more e*/
 			break;
 
-
 		case TCFG_ENDIAN:
 			if (goi->isconfigure) {
 				e = Jim_GetOpt_Nvp(goi, nvp_target_endian, &n);
@@ -4732,6 +4727,7 @@ no_params:
 			Jim_SetResultString(goi->interp, target->tap->dotted_name, -1);
 			/* loop for more e*/
 			break;
+
 		case TCFG_DBGBASE:
 			if (goi->isconfigure) {
 				e = Jim_GetOpt_Wide(goi, &w);
@@ -4746,6 +4742,7 @@ no_params:
 			Jim_SetResult(goi->interp, Jim_NewIntObj(goi->interp, target->dbgbase));
 			/* loop for more */
 			break;
+
 		case TCFG_CTIBASE:
 			if (goi->isconfigure) {
 				e = Jim_GetOpt_Wide(goi, &w);
@@ -4760,6 +4757,7 @@ no_params:
 			Jim_SetResult(goi->interp, Jim_NewIntObj(goi->interp, target->ctibase));
 			/* loop for more */
 			break;
+
 		case TCFG_RTOS:
 			/* RTOS */
 			{
@@ -4770,17 +4768,30 @@ no_params:
 			/* loop for more */
 			break;
 
+		case TCFG_AP_NUM:
+			/* Configure AP number so that it doesn't have to be detected */
+			if (goi->isconfigure) {
+				e = Jim_GetOpt_Wide(goi, &w);
+				if (e != JIM_OK)
+					return e;
+				target->ap_num = (int)w;
+			} else {
+				if (goi->argc != 0)
+					goto no_params;
+			}
+			Jim_SetResult(goi->interp, Jim_NewIntObj(goi->interp, target->ap_num));
+			/* loop for more */
+			break;
+
 		case TCFG_DEFER_EXAMINE:
 			/* DEFER_EXAMINE */
 			target->defer_examine = true;
 			/* loop for more */
 			break;
-
 		}
 	} /* while (goi->argc) */
 
-
-		/* done - we return */
+	/* done - we return */
 	return JIM_OK;
 }
 
@@ -5437,6 +5448,7 @@ static int target_create(Jim_GetOptInfo *goi)
 	Jim_Obj *new_cmd;
 	Jim_Cmd *cmd;
 	const char *cp;
+	char ref_name[80];
 	int e;
 	int x;
 	struct target *target;
@@ -5465,7 +5477,9 @@ static int target_create(Jim_GetOptInfo *goi)
 	if (e != JIM_OK)
 		return e;
 	struct transport *tr = get_current_transport();
+
 	if (tr->override_target) {
+		strcpy(ref_name, cp);
 		e = tr->override_target(&cp);
 		if (e != ERROR_OK) {
 			LOG_ERROR("The selected transport doesn't support this target");
@@ -5473,6 +5487,7 @@ static int target_create(Jim_GetOptInfo *goi)
 		}
 		LOG_INFO("The selected transport took over low-level target control. The results might differ compared to plain JTAG/SWD");
 	}
+
 	/* now does target type exist */
 	for (x = 0 ; target_types[x] ; x++) {
 		if (0 == strcmp(cp, target_types[x]->name)) {
@@ -5489,6 +5504,7 @@ static int target_create(Jim_GetOptInfo *goi)
 			}
 		}
 	}
+
 	if (target_types[x] == NULL) {
 		Jim_SetResultFormatted(goi->interp, "Unknown target type %s, try one of ", cp);
 		for (x = 0 ; target_types[x] ; x++) {
@@ -5509,8 +5525,11 @@ static int target_create(Jim_GetOptInfo *goi)
 
 	/* Create it */
 	target = calloc(1, sizeof(struct target));
+
 	/* set target number */
 	target->target_number = new_target_number();
+	LOG_DEBUG("create target[%d] %s  ", target->target_number, cp);
+
 	cmd_ctx->current_target = target->target_number;
 
 	/* allocate memory for each unique target type */
@@ -5523,6 +5542,8 @@ static int target_create(Jim_GetOptInfo *goi)
 
 	/* default to first core, override with -coreid */
 	target->coreid = 0;
+
+	target->ref_name = strdup(ref_name);
 
 	target->working_area        = 0x0;
 	target->working_area_size   = 0x0;
@@ -5539,7 +5560,7 @@ static int target_create(Jim_GetOptInfo *goi)
 
 	target->display             = 1;
 
-	target->halt_issued			= false;
+	target->halt_issued         = false;
 
 	/* initialize trace information */
 	target->trace_info = calloc(1, sizeof(struct trace));
@@ -5552,8 +5573,11 @@ static int target_create(Jim_GetOptInfo *goi)
 	target->rtos = NULL;
 	target->rtos_auto_detect = false;
 
+	target->ap_num = -1;
+
 	/* Do the rest as "configure" options */
 	goi->isconfigure = 1;
+	LOG_DEBUG("target_configure :%s", target->ref_name);
 	e = target_configure(goi, target);
 
 	if (target->tap == NULL) {
@@ -5581,6 +5605,8 @@ static int target_create(Jim_GetOptInfo *goi)
 		if (ERROR_OK != e)
 			LOG_ERROR("unable to register '%s' commands", cp);
 	}
+
+	LOG_DEBUG("target_create :%s %p", target->ref_name, target->type->target_create);
 	if (target->type->target_create)
 		(*(target->type->target_create))(target, goi->interp);
 
@@ -5712,7 +5738,60 @@ static int jim_target_smp(Jim_Interp *interp, int argc, Jim_Obj *const *argv)
 		curr = curr->next;
 	}
 
-	if (target && target->rtos)
+	if (target && target->rtos && !target->amp)
+		retval = rtos_smp_init(head->target);
+
+	return retval;
+}
+
+static int jim_target_amp(Jim_Interp *interp, int argc, Jim_Obj *const *argv)
+{
+	int i;
+	const char *targetname;
+	int retval, len;
+	struct target *target = (struct target *) NULL;
+	struct target_list *head, *curr, *new;
+	curr = (struct target_list *) NULL;
+	head = (struct target_list *) NULL;
+
+	retval = 0;
+	LOG_DEBUG("%d", argc);
+	/* argv[1] = target to associate in amp
+	 * argv[2] = target to assoicate in amp
+	 * argv[3] ...
+	 */
+
+	for (i = 1; i < argc; i++) {
+
+		targetname = Jim_GetString(argv[i], &len);
+		target = get_target(targetname);
+		LOG_DEBUG("%s ", targetname);
+		if (target) {
+			new = malloc(sizeof(struct target_list));
+			new->target = target;
+			new->next = (struct target_list *)NULL;
+			if (head == (struct target_list *)NULL) {
+				head = new;
+				curr = head;
+			} else {
+				curr->next = new;
+				curr = new;
+			}
+		}
+	}
+	/*  now parse the list of cpu and put the target in smp mode*/
+	curr = head;
+
+	while (curr != (struct target_list *)NULL) {
+		target = curr->target;
+		/* in this case, the amp must be set before */
+		target->amp = 1;
+		target->smp = 0;
+		target->head = head;
+		curr = curr->next;
+	}
+
+	if (target && target->rtos && !target->amp)
 		retval = rtos_smp_init(head->target);
 
 	return retval;
@@ -5740,8 +5819,7 @@ static const struct command_registration target_subcommand_handlers[] = {
 	},
 	{
 		.name = "create",
-		/* REVISIT this should be COMMAND_CONFIG ... */
-		.mode = COMMAND_ANY,
+		.mode = COMMAND_CONFIG,
 		.jim_handler = jim_target_create,
 		.usage = "name type '-chain-position' name [options ...]",
 		.help = "Creates and selects a new target",
@@ -5771,6 +5849,13 @@ static const struct command_registration target_subcommand_handlers[] = {
 		.jim_handler = jim_target_smp,
 		.usage = "targetname1 targetname2 ...",
 		.help = "gather several target in a smp list"
+	},
+	{
+		.name = "amp",
+		.mode = COMMAND_ANY,
+		.jim_handler = jim_target_amp,
+		.usage = "targetname1 targetname2 ...",
+		.help = "gather several target in an amp list"
 	},
 
 	COMMAND_REGISTRATION_DONE
@@ -6336,7 +6421,7 @@ static const struct command_registration target_exec_command_handlers[] = {
 		.handler = handle_bp_command,
 		.mode = COMMAND_EXEC,
 		.help = "list or set hardware or software breakpoint",
-		.usage = "<address> [<asid>]<length> ['hw'|'hw_ctx']",
+		.usage = "<address> [<asid>] <length> ['hw'|'hw_ctx']",
 	},
 	{
 		.name = "rbp",

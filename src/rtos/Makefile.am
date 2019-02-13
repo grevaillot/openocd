@@ -1,38 +1,32 @@
-include $(top_srcdir)/common.mk
+noinst_LTLIBRARIES += %D%/librtos.la
+%C%_librtos_la_SOURCES = \
+	%D%/rtos.c \
+	%D%/rtos_standard_stackings.c \
+	%D%/rtos_ecos_stackings.c  \
+	%D%/rtos_chibios_stackings.c \
+	%D%/rtos_embkernel_stackings.c \
+	%D%/rtos_mqx_stackings.c \
+	%D%/rtos_ucos_iii_stackings.c \
+	%D%/FreeRTOS.c \
+	%D%/ThreadX.c \
+	%D%/eCos.c \
+	%D%/linux.c \
+	%D%/ChibiOS.c \
+	%D%/embKernel.c \
+	%D%/mqx.c \
+	%D%/uCOS-III.c \
+	%D%/rtos.h \
+	%D%/rtos_standard_stackings.h \
+	%D%/rtos_ecos_stackings.h \
+	%D%/linux_header.h \
+	%D%/rtos_chibios_stackings.h \
+	%D%/rtos_embkernel_stackings.h \
+	%D%/rtos_mqx_stackings.h \
+	%D%/rtos_ucos_iii_stackings.h
 
-METASOURCES = AUTO
-noinst_LTLIBRARIES = librtos.la
-noinst_HEADERS = \
-	rtos.h \
-	rtos_standard_stackings.h \
-	rtos_ecos_stackings.h \
-	linux_header.h \
-	rtos_chibios_stackings.h \
-	rtos_embkernel_stackings.h \
-	rtos_mqx_stackings.h \
-	rtos_ucos_iii_stackings.h
+%C%_librtos_la_CFLAGS = $(AM_CFLAGS)
 
-librtos_la_SOURCES = \
-	rtos.c \
-	rtos_standard_stackings.c \
-	rtos_ecos_stackings.c  \
-	rtos_chibios_stackings.c \
-	rtos_embkernel_stackings.c \
-	rtos_mqx_stackings.c \
-	rtos_ucos_iii_stackings.c \
-	FreeRTOS.c \
-	ThreadX.c \
-	eCos.c \
-	linux.c \
-	ChibiOS.c \
-	embKernel.c \
-	mqx.c \
-	uCOS-III.c
-
-librtos_la_CFLAGS =
 if IS_MINGW
 # FD_* macros are sloppy with their signs on MinGW32 platform
-librtos_la_CFLAGS += -Wno-sign-compare
+%C%_librtos_la_CFLAGS += -Wno-sign-compare
 endif
-
-MAINTAINERCLEANFILES = $(srcdir)/Makefile.in

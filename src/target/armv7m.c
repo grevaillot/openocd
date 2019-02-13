@@ -541,6 +541,15 @@ int armv7m_wait_algorithm(struct target *target,
 
 	armv7m->arm.core_mode = armv7m_algorithm_info->core_mode;
 
+	/* restore target registers
+	 * Commented for the time being. Maybe not necessary...
+	*/
+	/*
+	armv7m_restore_context(target);
+	armv7m->load_core_reg_u32(target, 15, &pc);
+	LOG_DEBUG("restoring target registers. (ex: pc with value 0x%" PRIx32")", pc);
+	*/
+
 	return retval;
 }
 

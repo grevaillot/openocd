@@ -50,7 +50,7 @@ unsigned long compute_serial_str(unsigned char *descriptor, char *str)
 	if (len == 26) {
 		/* Size value returned by the "old" ST-Link DFU;
 		 * In that case the DFU returns 12 8-bits values, separated by 12 zeros;
-		 * This is a bad encoding of Unicode characters, that we workaround here ... */
+		 * This is a bad encoding of Unicode characters, that we workaround here */
 		for (i = 0; i < 12; i++) {
 			/* Useful values reside at sNDescriptor[2],[4] ... [24]
 			 * Each 8-bits value will be expressed on 2 hexadecimal digits in sNString */
@@ -78,7 +78,8 @@ static bool serial_descriptor_equal(libusb_device_handle *device, uint8_t str_in
 	bool matched;
 	unsigned char tbuf[255];
 	uint16_t langid;
-	uint8_t desc_utf16le[2+256*2+1];  /* Max size of string in UTF16 (+ 2 byte length) */
+	uint8_t desc_utf16le[2+256*2+1]; /* Max size of string in UTF16 */
+									 /* plus 2 byte length */
 	uint8_t desc_utf8[256 + 1];
 
 	if (str_index == 0)
@@ -95,7 +96,7 @@ static bool serial_descriptor_equal(libusb_device_handle *device, uint8_t str_in
 		LOG_ERROR("libusb_get_descriptor() failed to obtain language id with %d",
 				retval);
 		return false;
-	}                
+	}
 
 	langid = tbuf[2] | (tbuf[3] << 8);
 
@@ -106,19 +107,23 @@ static bool serial_descriptor_equal(libusb_device_handle *device, uint8_t str_in
 	 * "Q\377j\006I\207PS(H\t\207". */
 	memset(desc_utf16le, 0, sizeof(desc_utf16le));
 	retval = libusb_get_string_descriptor(device, str_index, langid,
-										desc_utf16le, sizeof(desc_utf16le) - 1);
+									desc_utf16le, sizeof(desc_utf16le) - 1);
 	if (retval < 0) {
 		LOG_ERROR("libusb_get_string_descriptor() failed with %d", retval);
 		return false;
 	}
 
-	if (retval < 2 || desc_utf16le[1] != LIBUSB_DT_STRING || desc_utf16le[0] > retval) {
-		LOG_ERROR("libusb_get_string_descriptor() string descriptor validation failed");
+	if (retval < 2
+			|| desc_utf16le[1] != LIBUSB_DT_STRING
+			|| desc_utf16le[0] > retval) {
+		LOG_ERROR("libusb_get_string_descriptor() string descriptor "
+				"validation failed");
 		return false;
 	}
 
-	/* USB string descriptors are stored in UTF-16LE encoding.
-	 * Conversion to UTF-8 allow comparison with user entered serial number. */
+	/* USB string descriptors are stored in UTF-16LE encoding.  Conversion to
+	 * UTF-8 allow comparison with user entered serial number.
+	 */
 	if (utf16le_to_utf8(&desc_utf16le[2], retval - 2, desc_utf8, sizeof(desc_utf8)) < 0) {
 		LOG_DEBUG("Invalid serial number utf-16le encoding");
 		return false;
@@ -139,7 +144,7 @@ static bool serial_descriptor_equal(libusb_device_handle *device, uint8_t str_in
 }
 
 static struct jtag_libusb_device_handle *iterate_devs(const uint16_t vids[], const uint16_t pids[],
-						const char *serial_utf8, bool print_mismatch)
+								const char *serial_utf8, bool print_mismatch)
 {
 	struct jtag_libusb_device_handle *libusb_handle = NULL;
 	int errCode;
@@ -164,7 +169,7 @@ static struct jtag_libusb_device_handle *iterate_devs(const uint16_t vids[], con
 		/* Device must be open to use libusb_get_string_descriptor. */
 		if (serial_utf8 != NULL &&
 				!serial_descriptor_equal(libusb_handle, dev_desc.iSerialNumber,
-								(const uint8_t *)serial_utf8, print_mismatch)) {
+							(const uint8_t *)serial_utf8, print_mismatch)) {
 			libusb_close(libusb_handle);
 			continue;
 		}
@@ -328,9 +333,8 @@ int jtag_libusb_choose_interface(struct jtag_libusb_device_handle *devh,
 	return ERROR_FAIL;
 }
 
-int jtag_libusb_get_pid(struct jtag_libusb_device_handle *devh, uint16_t *pid)
+int jtag_libusb_get_pid(struct jtag_libusb_device *dev, uint16_t *pid)
 {
-	struct jtag_libusb_device *dev = jtag_libusb_get_device(devh);
 	struct libusb_device_descriptor dev_desc;
 
 	if (libusb_get_device_descriptor(dev, &dev_desc) == 0) {

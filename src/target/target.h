@@ -103,7 +103,7 @@ struct working_area {
 
 struct gdb_service {
 	struct target *target;
-	/*  field for smp display  */
+	/*  field for smp or amp display  */
 	/*  element 0 coreid currently displayed ( 1 till n) */
 	/*  element 1 coreid to be displayed at next resume 1 till n 0 means resume
 	 *  all cores core displayed  */
@@ -125,7 +125,8 @@ enum target_register_class {
 /* target_type.h contains the full definition of struct target_type */
 struct target {
 	struct target_type *type;			/* target type definition (name, access functions) */
-	char *cmd_name;				/* tcl Name of target */
+	const char *cmd_name;				/* tcl Name of target */
+	char *ref_name;						/* tcl ref name of target */
 	int target_number;					/* DO NOT USE!  field to be removed in 2010 */
 	struct jtag_tap *tap;				/* where on the jtag chain is this */
 	int32_t coreid;						/* which device on the TAP? */
@@ -156,12 +157,12 @@ struct target {
 	uint32_t working_area;				/* working area (initialised RAM). Evaluated
 										 * upon first allocation from virtual/physical address. */
 	bool working_area_virt_spec;		/* virtual address specified? */
-	target_addr_t working_area_virt;			/* virtual address */
+	target_addr_t working_area_virt;	/* virtual address */
 	bool working_area_phys_spec;		/* physical address specified? */
-	target_addr_t working_area_phys;			/* physical address */
+	target_addr_t working_area_phys;	/* physical address */
 	uint32_t working_area_size;			/* size in bytes */
 	uint32_t backup_working_area;		/* whether the content of the working area has to be preserved */
-	struct working_area *working_areas;/* list of allocated working areas */
+	struct working_area *working_areas;	/* list of allocated working areas */
 	enum target_debug_reason debug_reason;/* reason why the target entered debug state */
 	enum target_endianness endianness;	/* target endianness */
 	/* also see: target_state_name() */
@@ -186,15 +187,19 @@ struct target {
 										 * system in place to support target specific options
 										 * currently. */
 
-	 bool ctibase_set;					 /* By default the debug base is not set */
-	 uint32_t ctibase;					 /* Really a Cortex-A specific option, but there is no
-										  * system in place to support target specific options
-										  * currently. */
+	bool ctibase_set;					/* By default the debug base is not set */
+	uint32_t ctibase;					/* Really a Cortex-A specific option, but there is no
+										 * system in place to support target specific options
+										 * currently. */
 	struct rtos *rtos;					/* Instance of Real Time Operating System support */
 	bool rtos_auto_detect;				/* A flag that indicates that the RTOS has been specified as "auto"
 										 * and must be detected when symbols are offered */
 	struct backoff_timer backoff;
 	int smp;							/* add some target attributes for smp support */
+	int amp;							/* add some target attributes for amp (multi cores non smp) support */
+
+	int ap_num;							/* Which AP in a DAP */
+
 	struct target_list *head;
 	/* the gdb service is there in case of smp, we have only one gdb server
 	 * for all smp target
@@ -204,6 +209,9 @@ struct target {
 
 	/* file-I/O information for host to do syscall */
 	struct gdb_fileio_info *fileio_info;
+
+	/* Do reset only once during startup */
+	bool first_reset;
 };
 
 struct target_list {
@@ -253,10 +261,6 @@ enum target_event {
 	TARGET_EVENT_RESET_ASSERT_POST,
 	TARGET_EVENT_RESET_DEASSERT_PRE,
 	TARGET_EVENT_RESET_DEASSERT_POST,
-	TARGET_EVENT_RESET_HALT_PRE,
-	TARGET_EVENT_RESET_HALT_POST,
-	TARGET_EVENT_RESET_WAIT_PRE,
-	TARGET_EVENT_RESET_WAIT_POST,
 	TARGET_EVENT_RESET_INIT,
 	TARGET_EVENT_RESET_END,
 

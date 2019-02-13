@@ -64,13 +64,13 @@ static int adapter_load_core_reg_u32(struct target *target,
 	switch (num) {
 	case 0 ... 18:
 		/* read a normal core register */
-		retval = adapter->layout->api->read_reg(adapter->handle, num, value);
+		retval = adapter->layout->api->read_reg(adapter->handle, num, value, target);
 
 		if (retval != ERROR_OK) {
 			LOG_ERROR("JTAG failure %i", retval);
 			return ERROR_JTAG_DEVICE_ERROR;
 		}
-		LOG_DEBUG("load from core reg %i  value 0x%" PRIx32 "", (int)num, *value);
+		LOG_DEBUG("load from core %d reg %i value 0x%" PRIx32 "", target->coreid, (int)num, *value);
 		break;
 
 	case ARMV7M_FPSCR:
@@ -81,7 +81,7 @@ static int adapter_load_core_reg_u32(struct target *target,
 		retval = target_read_u32(target, ARMV7M_SCS_DCRDR, value);
 		if (retval != ERROR_OK)
 			return retval;
-		LOG_DEBUG("load from FPSCR  value 0x%" PRIx32, *value);
+		LOG_DEBUG("load from FPSCR value 0x%" PRIx32, *value);
 		break;
 
 	case ARMV7M_S0 ... ARMV7M_S31:
@@ -104,7 +104,7 @@ static int adapter_load_core_reg_u32(struct target *target,
 		 * in one Debug Core register.  So say r0 and r2 docs;
 		 * it was removed from r1 docs, but still works.
 		 */
-		retval = adapter->layout->api->read_reg(adapter->handle, 20, value);
+		retval = adapter->layout->api->read_reg(adapter->handle, 20, value, target);
 		if (retval != ERROR_OK)
 			return retval;
 
@@ -153,7 +153,7 @@ static int adapter_store_core_reg_u32(struct target *target,
 	 */
 	switch (num) {
 	case 0 ... 18:
-		retval = adapter->layout->api->write_reg(adapter->handle, num, value);
+		retval = adapter->layout->api->write_reg(adapter->handle, num, value, target);
 
 		if (retval != ERROR_OK) {
 			struct reg *r;
@@ -163,7 +163,7 @@ static int adapter_store_core_reg_u32(struct target *target,
 			r->dirty = r->valid;
 			return ERROR_JTAG_DEVICE_ERROR;
 		}
-		LOG_DEBUG("write core reg %i value 0x%" PRIx32 "", (int)num, value);
+		LOG_DEBUG("write core %d reg %i value 0x%" PRIx32 "", target->coreid, (int)num, value);
 		break;
 
 	case ARMV7M_FPSCR:
@@ -198,7 +198,7 @@ static int adapter_store_core_reg_u32(struct target *target,
 		 * it was removed from r1 docs, but still works.
 		 */
 
-		adapter->layout->api->read_reg(adapter->handle, 20, &reg);
+		adapter->layout->api->read_reg(adapter->handle, 20, &reg, target);
 
 		switch (num) {
 		case ARMV7M_PRIMASK:
@@ -218,7 +218,7 @@ static int adapter_store_core_reg_u32(struct target *target,
 			break;
 		}
 
-		adapter->layout->api->write_reg(adapter->handle, 20, reg);
+		adapter->layout->api->write_reg(adapter->handle, 20, reg, target);
 
 		LOG_DEBUG("write special reg %i value 0x%" PRIx32 " ", (int)num, value);
 		break;
@@ -240,23 +240,24 @@ static int adapter_examine_debug_reason(struct target *target)
 	return ERROR_OK;
 }
 
-static int hl_dcc_read(struct hl_interface_s *hl_if, uint8_t *value, uint8_t *ctrl)
+static int hl_dcc_read(struct hl_interface_s *hl_if, uint8_t *value, uint8_t *ctrl, struct target *target)
 {
 	uint16_t dcrdr;
 	int retval = hl_if->layout->api->read_mem(hl_if->handle,
-			DCB_DCRDR, 1, sizeof(dcrdr), (uint8_t *)&dcrdr);
+			DCB_DCRDR, 1, sizeof(dcrdr), (uint8_t *)&dcrdr, target);
 	if (retval == ERROR_OK) {
-	    *ctrl = (uint8_t)dcrdr;
-	    *value = (uint8_t)(dcrdr >> 8);
+		*ctrl = (uint8_t)dcrdr;
+		*value = (uint8_t)(dcrdr >> 8);
 
-	    LOG_DEBUG("data 0x%x ctrl 0x%x", *value, *ctrl);
+		LOG_DEBUG("data 0x%x ctrl 0x%x", *value, *ctrl);
 
-	    if (dcrdr & 1) {
+		if (dcrdr & 1) {
 			/* write ack back to software dcc register
 			 * to signify we have read data */
 			/* atomically clear just the byte containing the busy bit */
 			static const uint8_t zero;
-			retval = hl_if->layout->api->write_mem(hl_if->handle, DCB_DCRDR, 1, 1, &zero);
+			retval = hl_if->layout->api->write_mem(hl_if->handle, DCB_DCRDR, 1, 1,
+								&zero, target);
 		}
 	}
 	return retval;
@@ -271,7 +272,7 @@ static int hl_target_request_data(struct target *target,
 	uint32_t i;
 
 	for (i = 0; i < (size * 4); i++) {
-		hl_dcc_read(hl_if, &data, &ctrl);
+		hl_dcc_read(hl_if, &data, &ctrl, target);
 		buffer[i] = data;
 	}
 
@@ -292,7 +293,7 @@ static int hl_handle_target_request(void *priv)
 		uint8_t data;
 		uint8_t ctrl;
 
-		hl_dcc_read(hl_if, &data, &ctrl);
+		hl_dcc_read(hl_if, &data, &ctrl, target);
 
 		/* check if we have data */
 		if (ctrl & (1 << 0)) {
@@ -300,11 +301,11 @@ static int hl_handle_target_request(void *priv)
 
 			/* we assume target is quick enough */
 			request = data;
-			hl_dcc_read(hl_if, &data, &ctrl);
+			hl_dcc_read(hl_if, &data, &ctrl, target);
 			request |= (data << 8);
-			hl_dcc_read(hl_if, &data, &ctrl);
+			hl_dcc_read(hl_if, &data, &ctrl, target);
 			request |= (data << 16);
-			hl_dcc_read(hl_if, &data, &ctrl);
+			hl_dcc_read(hl_if, &data, &ctrl, target);
 			request |= (data << 24);
 			target_request(target, request);
 		}
@@ -314,8 +315,8 @@ static int hl_handle_target_request(void *priv)
 }
 
 static int adapter_init_arch_info(struct target *target,
-				       struct cortex_m_common *cortex_m,
-				       struct jtag_tap *tap)
+				struct cortex_m_common *cortex_m,
+				struct jtag_tap *tap)
 {
 	struct armv7m_common *armv7m;
 
@@ -336,7 +337,7 @@ static int adapter_init_arch_info(struct target *target,
 }
 
 static int adapter_init_target(struct command_context *cmd_ctx,
-				    struct target *target)
+				struct target *target)
 {
 	LOG_DEBUG("%s", __func__);
 
@@ -346,7 +347,7 @@ static int adapter_init_target(struct command_context *cmd_ctx,
 }
 
 static int adapter_target_create(struct target *target,
-		Jim_Interp *interp)
+				Jim_Interp *interp)
 {
 	LOG_DEBUG("%s", __func__);
 
@@ -396,7 +397,7 @@ static int adapter_debug_entry(struct target *target)
 	adapter_load_context(target);
 
 	/* make sure we clear the vector catch bit */
-	adapter->layout->api->write_debug_reg(adapter->handle, DCB_DEMCR, TRCENA);
+	adapter->layout->api->write_debug_reg(adapter->handle, DCB_DEMCR, TRCENA, target);
 
 	r = arm->cpsr;
 	xPSR = buf_get_u32(r->value, 0, 32);
@@ -425,10 +426,11 @@ static int adapter_debug_entry(struct target *target)
 		armv7m->exception_number = 0;
 	}
 
-	LOG_DEBUG("entered debug state in core mode: %s at PC 0x%08" PRIx32 ", target->state: %s",
+	LOG_DEBUG("entered debug state in core mode: %s at PC 0x%08" PRIx32 ", target->state: %s, target->coreid: %d",
 		arm_mode_name(arm->core_mode),
 		buf_get_u32(arm->pc->value, 0, 32),
-		target_state_name(target));
+		target_state_name(target),
+		target->coreid);
 
 	return retval;
 }
@@ -440,7 +442,7 @@ static int adapter_poll(struct target *target)
 	struct armv7m_common *armv7m = target_to_armv7m(target);
 	enum target_state prev_target_state = target->state;
 
-	state = adapter->layout->api->state(adapter->handle);
+	state = adapter->layout->api->state(adapter->handle, target);
 
 	if (state == TARGET_UNKNOWN) {
 		LOG_ERROR("jtag status contains invalid mode value - communication failure");
@@ -493,13 +495,14 @@ static int adapter_assert_reset(struct target *target)
 		srst_asserted = true;
 	}
 
-	adapter->layout->api->write_debug_reg(adapter->handle, DCB_DHCSR, DBGKEY|C_DEBUGEN);
+	adapter->layout->api->write_debug_reg(adapter->handle, DCB_DHCSR, DBGKEY|C_DEBUGEN, target);
 
 	/* only set vector catch if halt is requested */
 	if (target->reset_halt)
-		adapter->layout->api->write_debug_reg(adapter->handle, DCB_DEMCR, TRCENA|VC_CORERESET);
+	     /* adapter->layout->api->write_debug_reg(adapter->handle, DCB_DEMCR, TRCENA | VC_HARDERR | VC_BUSERR | VC_CORERESET, target); */
+		adapter->layout->api->write_debug_reg(adapter->handle, DCB_DEMCR, TRCENA|VC_CORERESET, target);
 	else
-		adapter->layout->api->write_debug_reg(adapter->handle, DCB_DEMCR, TRCENA);
+		adapter->layout->api->write_debug_reg(adapter->handle, DCB_DEMCR, TRCENA, target);
 
 	if (jtag_reset_config & RESET_HAS_SRST) {
 		if (!srst_asserted) {
@@ -516,8 +519,15 @@ static int adapter_assert_reset(struct target *target)
 
 	if (use_srst_fallback) {
 		/* stlink v1 api does not support hardware srst, so we use a software reset fallback */
-		adapter->layout->api->write_debug_reg(adapter->handle, NVIC_AIRCR, AIRCR_VECTKEY | AIRCR_SYSRESETREQ);
+		adapter->layout->api->write_debug_reg(adapter->handle, NVIC_AIRCR, AIRCR_VECTKEY | AIRCR_SYSRESETREQ, target);
 	}
+
+	if (!target->first_reset) {
+		target->first_reset = true;
+	}
+
+	uint32_t reg;
+	adapter->layout->api->read_debug_reg(adapter->handle, DCB_DHCSR, (uint32_t *)&reg, target);
 
 	res = adapter->layout->api->reset(adapter->handle);
 
@@ -573,7 +583,7 @@ static int adapter_halt(struct target *target)
 	if (target->state == TARGET_UNKNOWN)
 		LOG_WARNING("target was in unknown state when halt was requested");
 
-	res = adapter->layout->api->halt(adapter->handle);
+	res = adapter->layout->api->halt(adapter->handle, target);
 
 	if (res != ERROR_OK)
 		return res;
@@ -647,7 +657,7 @@ static int adapter_resume(struct target *target, int current,
 					breakpoint->unique_id);
 			cortex_m_unset_breakpoint(target, breakpoint);
 
-			res = adapter->layout->api->step(adapter->handle);
+			res = adapter->layout->api->step(adapter->handle, target);
 
 			if (res != ERROR_OK)
 				return res;
@@ -656,7 +666,7 @@ static int adapter_resume(struct target *target, int current,
 		}
 	}
 
-	res = adapter->layout->api->run(adapter->handle);
+	res = adapter->layout->api->run(adapter->handle, target);
 
 	if (res != ERROR_OK)
 		return res;
@@ -719,7 +729,7 @@ static int adapter_step(struct target *target, int current,
 
 	target_call_event_callbacks(target, TARGET_EVENT_RESUMED);
 
-	res = adapter->layout->api->step(adapter->handle);
+	res = adapter->layout->api->step(adapter->handle, target);
 
 	if (res != ERROR_OK)
 		return res;
@@ -750,7 +760,7 @@ static int adapter_read_memory(struct target *target, target_addr_t address,
 	LOG_DEBUG("%s " TARGET_ADDR_FMT " %" PRIu32 " %" PRIu32,
 			  __func__, address, size, count);
 
-	return adapter->layout->api->read_mem(adapter->handle, address, size, count, buffer);
+	return adapter->layout->api->read_mem(adapter->handle, address, size, count, buffer, target);
 }
 
 static int adapter_write_memory(struct target *target, target_addr_t address,
@@ -765,7 +775,7 @@ static int adapter_write_memory(struct target *target, target_addr_t address,
 	LOG_DEBUG("%s " TARGET_ADDR_FMT " %" PRIu32 " %" PRIu32,
 			  __func__, address, size, count);
 
-	return adapter->layout->api->write_mem(adapter->handle, address, size, count, buffer);
+	return adapter->layout->api->write_mem(adapter->handle, address, size, count, buffer, target);
 }
 
 static const struct command_registration adapter_command_handlers[] = {
@@ -814,4 +824,5 @@ struct target_type hla_target = {
 	.remove_breakpoint = cortex_m_remove_breakpoint,
 	.add_watchpoint = cortex_m_add_watchpoint,
 	.remove_watchpoint = cortex_m_remove_watchpoint,
+	.profiling = cortex_m_profiling,
 };

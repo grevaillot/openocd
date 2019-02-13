@@ -89,6 +89,7 @@ int flash_driver_write(struct flash_bank *bank,
 	uint8_t *buffer, uint32_t offset, uint32_t count)
 {
 	int retval;
+	LOG_DEBUG("target %s", bank->target->cmd_name);
 
 	retval = bank->driver->write(bank, buffer, offset, count);
 	if (retval != ERROR_OK) {
@@ -237,8 +238,12 @@ int get_flash_bank_by_addr(struct target *target,
 
 	/* cycle through bank list */
 	for (c = flash_banks; c; c = c->next) {
-		if (c->target != target)
-			continue;
+		/* test added for multicore flash bank */
+		if (!target->amp) {
+			if (c->target != target) {
+				continue;
+			}
+		}
 
 		int retval;
 		retval = c->driver->auto_probe(c);
@@ -614,6 +619,8 @@ int flash_write_unlock(struct target *target, struct image *image,
 
 		/* find the corresponding flash bank */
 		retval = get_flash_bank_by_addr(target, run_address, false, &c);
+		LOG_DEBUG("get_flash_bank_by_addr => 0%x", c->base);
+
 		if (retval != ERROR_OK)
 			goto done;
 		if (c == NULL) {
@@ -674,6 +681,7 @@ int flash_write_unlock(struct target *target, struct image *image,
 			 * the current write operation to the current chip.
 			 */
 			LOG_DEBUG("Truncate flash run size to the current flash chip.");
+			LOG_INFO("flash_write_unlock : Truncate flash run size to the current flash chip");
 
 			run_size = c->base + c->size - run_address;
 			assert(run_size > 0);
@@ -760,6 +768,8 @@ int flash_write_unlock(struct target *target, struct image *image,
 						true, run_address, run_size);
 			}
 		}
+
+		LOG_DEBUG("address = 0%x , offset = 0%x, run_size= 0%x", c->base, (run_address - c->base), run_size);
 
 		if (retval == ERROR_OK) {
 			/* write flash sectors */

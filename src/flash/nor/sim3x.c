@@ -1,5 +1,6 @@
+
 /***************************************************************************
- *   Copyright (C) 2014 by Ladislav Bábel                                  *
+ *   Copyright (C) 2014 by Ladislav BÃ¡bel                                  *
  *   ladababel@seznam.cz                                                   *
  *                                                                         *
  *   Copyright (C) 2015 by Andreas Bomholtz                                *

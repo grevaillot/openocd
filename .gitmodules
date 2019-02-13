@@ -7,3 +7,4 @@
 [submodule "src/jtag/drivers/libjaylink"]
 	path = src/jtag/drivers/libjaylink
 	url = http://repo.or.cz/r/libjaylink.git
+	branch = 8645845c1abebd004e991ba9a7f808f4fd0c608b

@@ -472,7 +472,7 @@ COMMAND_HANDLER(handle_flash_fill_command)
 	uint32_t wordsize;
 	int retval = ERROR_OK;
 
-	static size_t const chunksize = 1024;
+	static size_t const chunksize = 1048576;
 	uint8_t *chunk = NULL, *readback = NULL;
 
 	if (CMD_ARGC != 3) {
@@ -538,6 +538,15 @@ COMMAND_HANDLER(handle_flash_fill_command)
 	}
 
 	struct duration bench;
+	struct duration bench_read;
+	struct duration bench_write;
+	int64_t accu_write = 0;
+	int64_t accu_read = 0;
+	int64_t start_write;
+	int64_t start_read;
+	int64_t stop_write;
+	int64_t stop_read; 
+
 	duration_start(&bench);
 
 	for (wrote = 0; wrote < (count*wordsize); wrote += cur_size) {
@@ -547,6 +556,8 @@ COMMAND_HANDLER(handle_flash_fill_command)
 		if (retval != ERROR_OK)
 			goto done;
 
+		start_write = timeval_ms();
+
 		cur_size = MIN((count * wordsize - wrote), chunksize);
 		err = flash_driver_write(bank, chunk, address - bank->base + wrote, cur_size);
 		if (err != ERROR_OK) {
@@ -554,11 +565,18 @@ COMMAND_HANDLER(handle_flash_fill_command)
 			goto done;
 		}
 
+		stop_write = timeval_ms();
+		accu_write += stop_write - start_write;
+
+		start_read = timeval_ms();
 		err = flash_driver_read(bank, readback, address - bank->base + wrote, cur_size);
 		if (err != ERROR_OK) {
 			retval = err;
 			goto done;
 		}
+		stop_read = timeval_ms();
+		accu_read += stop_read - start_read;
+
 
 		for (i = 0; i < cur_size; i++) {
 			if (readback[i] != chunk[i]) {
@@ -573,10 +591,19 @@ COMMAND_HANDLER(handle_flash_fill_command)
 		}
 	}
 
+	bench_read.elapsed.tv_sec = 0;
+	bench_read.elapsed.tv_usec = accu_read*1000;
+
+	bench_write.elapsed.tv_sec  = 0;
+	bench_write.elapsed.tv_usec  = accu_write*1000;
+
 	if ((retval == ERROR_OK) && (duration_measure(&bench) == ERROR_OK)) {
 		command_print(CMD_CTX, "wrote %" PRIu32 " bytes to 0x%8.8" PRIx32
-			" in %fs (%0.3f KiB/s)", wrote, address,
-			duration_elapsed(&bench), duration_kbps(&bench, wrote));
+			" in %fs (%0.3f KiB/s), write in %fs (%0.3f KiB/s), read in %fs (%0.3f KiB/s)",
+			wrote, address,
+			duration_elapsed(&bench), duration_kbps(&bench, wrote),
+			duration_elapsed(&bench_write),duration_kbps(&bench_write, wrote),
+			duration_elapsed(&bench_read), duration_kbps(&bench_read, wrote));
 	}
 
 done:
@@ -961,7 +988,6 @@ static const struct command_registration flash_exec_command_handlers[] = {
 			"that all of the first and last sectors are erased. "
 			"If 'unlock' is specified, then the flash is unprotected "
 			"before erasing.",
-
 	},
 	{
 		.name = "filld",

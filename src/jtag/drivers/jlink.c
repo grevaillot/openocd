@@ -25,8 +25,7 @@
  *   GNU General Public License for more details.                          *
  *                                                                         *
  *   You should have received a copy of the GNU General Public License     *
- *   along with this program; if not, write to the                         *
- *   Free Software Foundation, Inc.,                                       *
+ *   along with this program.  If not, see <http://www.gnu.org/licenses/>. *
  ***************************************************************************/
 
 #ifdef HAVE_CONFIG_H
@@ -218,7 +217,7 @@ static void jlink_execute_scan(struct jtag_command *cmd)
 					 field->num_bits - 1,
 					 1);
 			tap_set_state(tap_state_transition(tap_get_state(), 1));
-			jlink_clock_data(&last_bit,
+			jlink_clock_data(NULL,
 					 0,
 					 &tms_bits,
 					 1,
@@ -315,21 +314,20 @@ static int jlink_execute_queue(void)
 static int jlink_speed(int speed)
 {
 	int ret;
-	uint32_t freq;
-	uint16_t divider;
+	struct jaylink_speed tmp;
 	int max_speed;
 
 	if (jaylink_has_cap(caps, JAYLINK_DEV_CAP_GET_SPEEDS)) {
-		ret = jaylink_get_speeds(devh, &freq, &divider);
+		ret = jaylink_get_speeds(devh, &tmp);
 
 		if (ret != JAYLINK_OK) {
 			LOG_ERROR("jaylink_get_speeds() failed: %s.",
-				jaylink_strerror_name(ret));
+				jaylink_strerror(ret));
 			return ERROR_JTAG_DEVICE_ERROR;
 		}
 
-		freq = freq / 1000;
-		max_speed = freq / divider;
+		tmp.freq /= 1000;
+		max_speed = tmp.freq / tmp.div;
 	} else {
 		max_speed = JLINK_MAX_SPEED;
 	}
@@ -351,7 +349,7 @@ static int jlink_speed(int speed)
 
 	if (ret != JAYLINK_OK) {
 		LOG_ERROR("jaylink_set_speed() failed: %s.",
-			jaylink_strerror_name(ret));
+			jaylink_strerror(ret));
 		return ERROR_JTAG_DEVICE_ERROR;
 	}
 
@@ -380,7 +378,7 @@ static bool read_device_config(struct device_config *cfg)
 
 	if (ret != JAYLINK_OK) {
 		LOG_ERROR("jaylink_read_raw_config() failed: %s.",
-			jaylink_strerror_name(ret));
+			jaylink_strerror(ret));
 		return false;
 	}
 
@@ -411,7 +409,7 @@ static int select_interface(void)
 
 	if (ret != JAYLINK_OK) {
 		LOG_ERROR("jaylink_get_available_interfaces() failed: %s.",
-			jaylink_strerror_name(ret));
+			jaylink_strerror(ret));
 		return ERROR_JTAG_INIT_FAILED;
 	}
 
@@ -424,7 +422,7 @@ static int select_interface(void)
 
 	if (ret < 0) {
 		LOG_ERROR("jaylink_select_interface() failed: %s.",
-			jaylink_strerror_name(ret));
+			jaylink_strerror(ret));
 		return ERROR_JTAG_INIT_FAILED;
 	}
 
@@ -434,23 +432,23 @@ static int select_interface(void)
 static int jlink_register(void)
 {
 	int ret;
-	int i;
+	size_t i;
 	bool handle_found;
+	size_t count;
 
 	if (!jaylink_has_cap(caps, JAYLINK_DEV_CAP_REGISTER))
 		return ERROR_OK;
 
-	ret = jaylink_register(devh, &conn, connlist, NULL, NULL);
+	ret = jaylink_register(devh, &conn, connlist, &count);
 
-	if (ret < 0) {
-		LOG_ERROR("jaylink_register() failed: %s.",
-			jaylink_strerror_name(ret));
+	if (ret != JAYLINK_OK) {
+		LOG_ERROR("jaylink_register() failed: %s.", jaylink_strerror(ret));
 		return ERROR_FAIL;
 	}
 
 	handle_found = false;
 
-	for (i = 0; i < ret; i++) {
+	for (i = 0; i < count; i++) {
 		if (connlist[i].handle == conn.handle) {
 			handle_found = true;
 			break;
@@ -483,7 +481,7 @@ static bool adjust_swd_buffer_size(void)
 
 	if (ret != JAYLINK_OK) {
 		LOG_ERROR("jaylink_get_free_memory() failed: %s.",
-			jaylink_strerror_name(ret));
+			jaylink_strerror(ret));
 		return false;
 	}
 
@@ -503,6 +501,39 @@ static bool adjust_swd_buffer_size(void)
 	return true;
 }
 
+static int jaylink_log_handler(const struct jaylink_context *ctx,
+		enum jaylink_log_level level, const char *format, va_list args,
+		void *user_data)
+{
+	enum log_levels tmp;
+
+	switch (level) {
+	case JAYLINK_LOG_LEVEL_ERROR:
+		tmp = LOG_LVL_ERROR;
+		break;
+	case JAYLINK_LOG_LEVEL_WARNING:
+		tmp = LOG_LVL_WARNING;
+		break;
+	/*
+	 * Forward info messages to the debug output because they are more verbose
+	 * than info messages of OpenOCD.
+	 */
+	case JAYLINK_LOG_LEVEL_INFO:
+	case JAYLINK_LOG_LEVEL_DEBUG:
+		tmp = LOG_LVL_DEBUG;
+		break;
+	case JAYLINK_LOG_LEVEL_DEBUG_IO:
+		tmp = LOG_LVL_DEBUG_IO;
+		break;
+	default:
+		tmp = LOG_LVL_WARNING;
+	}
+
+	log_vprintf_lf(tmp, __FILE__, __LINE__, __func__, format, args);
+
+	return 0;
+}
+
 static int jlink_init(void)
 {
 	int ret;
@@ -515,28 +546,63 @@ static int jlink_init(void)
 	struct jaylink_hardware_status hwstatus;
 	enum jaylink_usb_address address;
 	size_t length;
+	size_t num_devices;
+	uint32_t host_interfaces;
+
+	LOG_DEBUG("Using libjaylink %s (compiled with %s).",
+		jaylink_version_package_get_string(), JAYLINK_VERSION_PACKAGE_STRING);
+
+	if (!jaylink_library_has_cap(JAYLINK_CAP_HIF_USB) && use_usb_address) {
+		LOG_ERROR("J-Link driver does not support USB devices.");
+		return ERROR_JTAG_INIT_FAILED;
+	}
 
 	ret = jaylink_init(&jayctx);
 
 	if (ret != JAYLINK_OK) {
-		LOG_ERROR("jaylink_init() failed: %s.",
-			jaylink_strerror_name(ret));
+		LOG_ERROR("jaylink_init() failed: %s.", jaylink_strerror(ret));
 		return ERROR_JTAG_INIT_FAILED;
 	}
 
-	ret = jaylink_get_device_list(jayctx, &devs);
+	ret = jaylink_log_set_callback(jayctx, &jaylink_log_handler, NULL);
 
-	if (ret < 0) {
-		LOG_ERROR("jaylink_get_device_list() failed: %s.",
-			jaylink_strerror_name(ret));
+	if (ret != JAYLINK_OK) {
+		LOG_ERROR("jaylink_log_set_callback() failed: %s.",
+			jaylink_strerror(ret));
+		jaylink_exit(jayctx);
+		return ERROR_JTAG_INIT_FAILED;
+	}
+
+	host_interfaces = JAYLINK_HIF_USB;
+
+	if (use_serial_number)
+		host_interfaces |= JAYLINK_HIF_TCP;
+
+	ret = jaylink_discovery_scan(jayctx, host_interfaces);
+
+	if (ret != JAYLINK_OK) {
+		LOG_ERROR("jaylink_discovery_scan() failed: %s.",
+			jaylink_strerror(ret));
+		jaylink_exit(jayctx);
+		return ERROR_JTAG_INIT_FAILED;
+	}
+
+	ret = jaylink_get_devices(jayctx, &devs, &num_devices);
+
+	if (ret != JAYLINK_OK) {
+		LOG_ERROR("jaylink_get_devices() failed: %s.", jaylink_strerror(ret));
+		jaylink_exit(jayctx);
+		return ERROR_JTAG_INIT_FAILED;
+	}
+
+	if (!use_serial_number && !use_usb_address && num_devices > 1) {
+		LOG_ERROR("Multiple devices found, specify the desired device.");
+		jaylink_free_devices(devs, true);
 		jaylink_exit(jayctx);
 		return ERROR_JTAG_INIT_FAILED;
 	}
 
 	found_device = false;
-
-	if (!use_serial_number && !use_usb_address)
-		LOG_INFO("No device selected, using first device.");
 
 	for (i = 0; devs[i]; i++) {
 		if (use_serial_number) {
@@ -546,7 +612,7 @@ static int jlink_init(void)
 				continue;
 			} else if (ret != JAYLINK_OK) {
 				LOG_WARNING("jaylink_device_get_serial_number() failed: %s.",
-					jaylink_strerror_name(ret));
+					jaylink_strerror(ret));
 				continue;
 			}
 
@@ -557,9 +623,11 @@ static int jlink_init(void)
 		if (use_usb_address) {
 			ret = jaylink_device_get_usb_address(devs[i], &address);
 
-			if (ret != JAYLINK_OK) {
+			if (ret == JAYLINK_ERR_NOT_SUPPORTED) {
+				continue;
+			} else if (ret != JAYLINK_OK) {
 				LOG_WARNING("jaylink_device_get_usb_address() failed: %s.",
-					jaylink_strerror_name(ret));
+					jaylink_strerror(ret));
 				continue;
 			}
 
@@ -574,10 +642,10 @@ static int jlink_init(void)
 			break;
 		}
 
-		LOG_ERROR("Failed to open device: %s.", jaylink_strerror_name(ret));
+		LOG_ERROR("Failed to open device: %s.", jaylink_strerror(ret));
 	}
 
-	jaylink_free_device_list(devs, 1);
+	jaylink_free_devices(devs, true);
 
 	if (!found_device) {
 		LOG_ERROR("No J-Link device found.");
@@ -594,7 +662,7 @@ static int jlink_init(void)
 
 	if (ret != JAYLINK_OK) {
 		LOG_ERROR("jaylink_get_firmware_version() failed: %s.",
-			jaylink_strerror_name(ret));
+			jaylink_strerror(ret));
 		jaylink_close(devh);
 		jaylink_exit(jayctx);
 		return ERROR_JTAG_INIT_FAILED;
@@ -609,7 +677,7 @@ static int jlink_init(void)
 	ret = jaylink_get_caps(devh, caps);
 
 	if (ret != JAYLINK_OK) {
-		LOG_ERROR("jaylink_get_caps() failed: %s.", jaylink_strerror_name(ret));
+		LOG_ERROR("jaylink_get_caps() failed: %s.", jaylink_strerror(ret));
 		jaylink_close(devh);
 		jaylink_exit(jayctx);
 		return ERROR_JTAG_INIT_FAILED;
@@ -620,21 +688,21 @@ static int jlink_init(void)
 
 		if (ret != JAYLINK_OK) {
 			LOG_ERROR("jaylink_get_extended_caps() failed:  %s.",
-				jaylink_strerror_name(ret));
+				jaylink_strerror(ret));
 			jaylink_close(devh);
 			jaylink_exit(jayctx);
 			return ERROR_JTAG_INIT_FAILED;
 		}
 	}
 
-	jtag_command_version = JAYLINK_JTAG_V2;
+	jtag_command_version = JAYLINK_JTAG_VERSION_2;
 
 	if (jaylink_has_cap(caps, JAYLINK_DEV_CAP_GET_HW_VERSION)) {
 		ret = jaylink_get_hardware_version(devh, &hwver);
 
 		if (ret != JAYLINK_OK) {
 			LOG_ERROR("Failed to retrieve hardware version: %s.",
-				jaylink_strerror_name(ret));
+				jaylink_strerror(ret));
 			jaylink_close(devh);
 			jaylink_exit(jayctx);
 			return ERROR_JTAG_INIT_FAILED;
@@ -643,7 +711,7 @@ static int jlink_init(void)
 		LOG_INFO("Hardware version: %u.%02u", hwver.major, hwver.minor);
 
 		if (hwver.major >= 5)
-			jtag_command_version = JAYLINK_JTAG_V3;
+			jtag_command_version = JAYLINK_JTAG_VERSION_3;
 	}
 
 	if (iface == JAYLINK_TIF_SWD) {
@@ -675,7 +743,7 @@ static int jlink_init(void)
 
 	if (ret != JAYLINK_OK) {
 		LOG_ERROR("jaylink_get_hardware_status() failed: %s.",
-			jaylink_strerror_name(ret));
+			jaylink_strerror(ret));
 		jaylink_close(devh);
 		jaylink_exit(jayctx);
 		return ERROR_JTAG_INIT_FAILED;
@@ -686,7 +754,7 @@ static int jlink_init(void)
 
 	conn.handle = 0;
 	conn.pid = 0;
-	conn.hid = 0;
+	strcpy(conn.hid, "0.0.0.0");
 	conn.iid = 0;
 	conn.cid = 0;
 
@@ -730,21 +798,21 @@ static int jlink_init(void)
 static int jlink_quit(void)
 {
 	int ret;
+	size_t count;
 
 	if (trace_enabled) {
 		ret = jaylink_swo_stop(devh);
 
 		if (ret != JAYLINK_OK)
-			LOG_ERROR("jaylink_swo_stop() failed: %s.",
-				jaylink_strerror_name(ret));
+			LOG_ERROR("jaylink_swo_stop() failed: %s.", jaylink_strerror(ret));
 	}
 
 	if (jaylink_has_cap(caps, JAYLINK_DEV_CAP_REGISTER)) {
-		ret = jaylink_unregister(devh, &conn, connlist, NULL, NULL);
+		ret = jaylink_unregister(devh, &conn, connlist, &count);
 
-		if (ret < 0)
+		if (ret != JAYLINK_OK)
 			LOG_ERROR("jaylink_unregister() failed: %s.",
-				jaylink_strerror_name(ret));
+				jaylink_strerror(ret));
 	}
 
 	jaylink_close(devh);
@@ -879,13 +947,21 @@ COMMAND_HANDLER(jlink_usb_command)
 
 COMMAND_HANDLER(jlink_serial_command)
 {
+	int ret;
+
 	if (CMD_ARGC != 1) {
 		command_print(CMD_CTX, "Need exactly one argument for jlink serial.");
 		return ERROR_COMMAND_SYNTAX_ERROR;
 	}
 
-	if (sscanf(CMD_ARGV[0], "%" SCNd32, &serial_number) != 1) {
+	ret = jaylink_parse_serial_number(CMD_ARGV[0], &serial_number);
+
+	if (ret == JAYLINK_ERR) {
 		command_print(CMD_CTX, "Invalid serial number: %s.", CMD_ARGV[0]);
+		return ERROR_FAIL;
+	} else if (ret != JAYLINK_OK) {
+		command_print(CMD_CTX, "jaylink_parse_serial_number() failed: %s.",
+			jaylink_strerror(ret));
 		return ERROR_FAIL;
 	}
 
@@ -904,7 +980,7 @@ COMMAND_HANDLER(jlink_handle_hwstatus_command)
 
 	if (ret != JAYLINK_OK) {
 		command_print(CMD_CTX, "jaylink_get_hardware_status() failed: %s.",
-			jaylink_strerror_name(ret));
+			jaylink_strerror(ret));
 		return ERROR_FAIL;
 	}
 
@@ -936,7 +1012,7 @@ COMMAND_HANDLER(jlink_handle_free_memory_command)
 
 	if (ret != JAYLINK_OK) {
 		command_print(CMD_CTX, "jaylink_get_free_memory() failed: %s.",
-			jaylink_strerror_name(ret));
+			jaylink_strerror(ret));
 		return ERROR_FAIL;
 	}
 
@@ -952,10 +1028,10 @@ COMMAND_HANDLER(jlink_handle_jlink_jtag_command)
 
 	if (!CMD_ARGC) {
 		switch (jtag_command_version) {
-			case JAYLINK_JTAG_V2:
+			case JAYLINK_JTAG_VERSION_2:
 				version = 2;
 				break;
-			case JAYLINK_JTAG_V3:
+			case JAYLINK_JTAG_VERSION_3:
 				version = 3;
 				break;
 			default:
@@ -971,10 +1047,10 @@ COMMAND_HANDLER(jlink_handle_jlink_jtag_command)
 
 		switch (tmp) {
 			case 2:
-				jtag_command_version = JAYLINK_JTAG_V2;
+				jtag_command_version = JAYLINK_JTAG_VERSION_2;
 				break;
 			case 3:
-				jtag_command_version = JAYLINK_JTAG_V3;
+				jtag_command_version = JAYLINK_JTAG_VERSION_3;
 				break;
 			default:
 				command_print(CMD_CTX, "Invalid argument: %s.", CMD_ARGV[0]);
@@ -1018,7 +1094,7 @@ COMMAND_HANDLER(jlink_handle_target_power_command)
 
 	if (ret != JAYLINK_OK) {
 		command_print(CMD_CTX, "jaylink_set_target_power() failed: %s.",
-			jaylink_strerror_name(ret));
+			jaylink_strerror(ret));
 		return ERROR_FAIL;
 	}
 
@@ -1124,7 +1200,7 @@ static int poll_trace(uint8_t *buf, size_t *size)
 	ret = jaylink_swo_read(devh, buf, &length);
 
 	if (ret != JAYLINK_OK) {
-		LOG_ERROR("jaylink_swo_read() failed: %s.", jaylink_strerror_name(ret));
+		LOG_ERROR("jaylink_swo_read() failed: %s.", jaylink_strerror(ret));
 		return ERROR_FAIL;
 	}
 
@@ -1145,7 +1221,7 @@ static uint32_t calculate_trace_buffer_size(void)
 
 	if (ret != JAYLINK_OK) {
 		LOG_ERROR("jaylink_get_free_memory() failed: %s.",
-			jaylink_strerror_name(ret));
+			jaylink_strerror(ret));
 		return ERROR_FAIL;
 	}
 
@@ -1209,7 +1285,7 @@ static int config_trace(bool enabled, enum tpio_pin_protocol pin_protocol,
 	ret = jaylink_swo_stop(devh);
 
 	if (ret != JAYLINK_OK) {
-		LOG_ERROR("jaylink_swo_stop() failed: %s.", jaylink_strerror_name(ret));
+		LOG_ERROR("jaylink_swo_stop() failed: %s.", jaylink_strerror(ret));
 		return ERROR_FAIL;
 	}
 
@@ -1235,7 +1311,7 @@ static int config_trace(bool enabled, enum tpio_pin_protocol pin_protocol,
 
 	if (ret != JAYLINK_OK) {
 		LOG_ERROR("jaylink_swo_get_speeds() failed: %s.",
-			jaylink_strerror_name(ret));
+			jaylink_strerror(ret));
 		return ERROR_FAIL;
 	}
 
@@ -1251,8 +1327,7 @@ static int config_trace(bool enabled, enum tpio_pin_protocol pin_protocol,
 		buffer_size);
 
 	if (ret != JAYLINK_OK) {
-		LOG_ERROR("jaylink_start_swo() failed: %s.",
-			jaylink_strerror_name(ret));
+		LOG_ERROR("jaylink_start_swo() failed: %s.", jaylink_strerror(ret));
 		return ERROR_FAIL;
 	}
 
@@ -1511,7 +1586,7 @@ COMMAND_HANDLER(jlink_handle_config_write_command)
 
 	if (ret != JAYLINK_OK) {
 		LOG_ERROR("jaylink_write_raw_config() failed: %s.",
-			jaylink_strerror_name(ret));
+			jaylink_strerror(ret));
 		return ERROR_FAIL;
 	}
 
@@ -1542,6 +1617,123 @@ COMMAND_HANDLER(jlink_handle_config_command)
 
 	if (CMD_ARGC == 0)
 		show_config(CMD_CTX);
+
+	return ERROR_OK;
+}
+
+COMMAND_HANDLER(jlink_handle_emucom_write_command)
+{
+	int ret;
+	size_t tmp;
+	uint32_t channel;
+	uint32_t length;
+	uint8_t *buf;
+	size_t dummy;
+
+	if (CMD_ARGC != 2)
+		return ERROR_COMMAND_SYNTAX_ERROR;
+
+	if (!jaylink_has_cap(caps, JAYLINK_DEV_CAP_EMUCOM)) {
+		LOG_ERROR("Device does not support EMUCOM.");
+		return ERROR_FAIL;
+	}
+
+	COMMAND_PARSE_NUMBER(u32, CMD_ARGV[0], channel);
+
+	tmp = strlen(CMD_ARGV[1]);
+
+	if (tmp % 2 != 0) {
+		LOG_ERROR("Data must be encoded as hexadecimal pairs.");
+		return ERROR_COMMAND_ARGUMENT_INVALID;
+	}
+
+	buf = malloc(tmp / 2);
+
+	if (!buf) {
+		LOG_ERROR("Failed to allocate buffer.");
+		return ERROR_FAIL;
+	}
+
+	dummy = unhexify(buf, CMD_ARGV[1], tmp / 2);
+
+	if (dummy != (tmp / 2)) {
+		LOG_ERROR("Data must be encoded as hexadecimal pairs.");
+		free(buf);
+		return ERROR_COMMAND_ARGUMENT_INVALID;
+	}
+
+	length = tmp / 2;
+	ret = jaylink_emucom_write(devh, channel, buf, &length);
+
+	free(buf);
+
+	if (ret == JAYLINK_ERR_DEV_NOT_SUPPORTED) {
+		LOG_ERROR("Channel not supported by the device.");
+		return ERROR_FAIL;
+	} else if (ret != JAYLINK_OK) {
+		LOG_ERROR("Failed to write to channel: %s.", jaylink_strerror(ret));
+		return ERROR_FAIL;
+	}
+
+	if (length != (tmp / 2))
+		LOG_WARNING("Only %" PRIu32 " bytes written to the channel.", length);
+
+	return ERROR_OK;
+}
+
+COMMAND_HANDLER(jlink_handle_emucom_read_command)
+{
+	int ret;
+	uint32_t channel;
+	uint32_t length;
+	uint8_t *buf;
+	size_t tmp;
+
+	if (CMD_ARGC != 2)
+		return ERROR_COMMAND_SYNTAX_ERROR;
+
+	if (!jaylink_has_cap(caps, JAYLINK_DEV_CAP_EMUCOM)) {
+		LOG_ERROR("Device does not support EMUCOM.");
+		return ERROR_FAIL;
+	}
+
+	COMMAND_PARSE_NUMBER(u32, CMD_ARGV[0], channel);
+	COMMAND_PARSE_NUMBER(u32, CMD_ARGV[1], length);
+
+	buf = malloc(length * 3 + 1);
+
+	if (!buf) {
+		LOG_ERROR("Failed to allocate buffer.");
+		return ERROR_FAIL;
+	}
+
+	ret = jaylink_emucom_read(devh, channel, buf, &length);
+
+	if (ret == JAYLINK_ERR_DEV_NOT_SUPPORTED) {
+		LOG_ERROR("Channel is not supported by the device.");
+		free(buf);
+		return ERROR_FAIL;
+	} else if (ret == JAYLINK_ERR_DEV_NOT_AVAILABLE) {
+		LOG_ERROR("Channel is not available for the requested amount of data. "
+			"%" PRIu32 " bytes are avilable.", length);
+		free(buf);
+		return ERROR_FAIL;
+	} else if (ret != JAYLINK_OK) {
+		LOG_ERROR("Failed to read from channel: %s.", jaylink_strerror(ret));
+		free(buf);
+		return ERROR_FAIL;
+	}
+
+	tmp = hexify((char *)buf + length, buf, length, 2 * length + 1);
+
+	if (tmp != 2 * length) {
+		LOG_ERROR("Failed to convert data into hexadecimal string.");
+		free(buf);
+		return ERROR_FAIL;
+	}
+
+	command_print(CMD_CTX, "%s", buf + length);
+	free(buf);
 
 	return ERROR_OK;
 }
@@ -1587,6 +1779,24 @@ static const struct command_registration jlink_config_subcommand_handlers[] = {
 		.handler = &jlink_handle_config_write_command,
 		.mode = COMMAND_EXEC,
 		.help = "write configuration to the device"
+	},
+	COMMAND_REGISTRATION_DONE
+};
+
+static const struct command_registration jlink_emucom_subcommand_handlers[] = {
+	{
+		.name = "write",
+		.handler = &jlink_handle_emucom_write_command,
+		.mode = COMMAND_EXEC,
+		.help = "write to a channel",
+		.usage = "<channel> <data>",
+	},
+	{
+		.name = "read",
+		.handler = &jlink_handle_emucom_read_command,
+		.mode = COMMAND_EXEC,
+		.help = "read from a channel",
+		.usage = "<channel> <length>"
 	},
 	COMMAND_REGISTRATION_DONE
 };
@@ -1639,6 +1849,12 @@ static const struct command_registration jlink_subcommand_handlers[] = {
 		.help = "access the device configuration. If no argument is given "
 			"this will show the device configuration",
 		.chain = jlink_config_subcommand_handlers,
+	},
+	{
+		.name = "emucom",
+		.mode = COMMAND_EXEC,
+		.help = "access EMUCOM channel",
+		.chain = jlink_emucom_subcommand_handlers
 	},
 	COMMAND_REGISTRATION_DONE
 };
@@ -1709,7 +1925,8 @@ static void jlink_tap_init(void)
 {
 	tap_length = 0;
 	pending_scan_results_length = 0;
-	memset(tms_buffer, 0, sizeof(tdi_buffer));
+	memset(tms_buffer, 0, sizeof(tms_buffer));
+	memset(tdi_buffer, 0, sizeof(tdi_buffer));
 }
 
 static void jlink_clock_data(const uint8_t *out, unsigned out_offset,
@@ -1769,7 +1986,7 @@ static int jlink_flush(void)
 		tap_length, jtag_command_version);
 
 	if (ret != JAYLINK_OK) {
-		LOG_ERROR("jaylink_jtag_io() failed: %s.", jaylink_strerror_name(ret));
+		LOG_ERROR("jaylink_jtag_io() failed: %s.", jaylink_strerror(ret));
 		jlink_tap_init();
 		return ERROR_JTAG_QUEUE_FAILED;
 	}
@@ -1875,7 +2092,7 @@ static int jlink_swd_run_queue(void)
 	ret = jaylink_swd_io(devh, tms_buffer, tdi_buffer, tdo_buffer, tap_length);
 
 	if (ret != JAYLINK_OK) {
-		LOG_ERROR("jaylink_swd_io() failed: %s.", jaylink_strerror_name(ret));
+		LOG_ERROR("jaylink_swd_io() failed: %s.", jaylink_strerror(ret));
 		goto skip;
 	}
 

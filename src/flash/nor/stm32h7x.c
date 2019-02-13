@@ -137,7 +137,7 @@ struct stm32h7x_flash_bank {
 };
 
 static const struct stm32h7x_rev stm32_450_revs[] = {
-	{ 0x1000, "A" }, { 0x1001, "Z" }, { 0x1003, "Y" },
+	{ 0x1000, "A" }, { 0x1001, "Z" }, { 0x1003, "Y" }, { 0x2001, "X" }, { 0x2003, "W" },
 };
 
 static const struct stm32h7x_part_info stm32h7x_parts[] = {
@@ -189,18 +189,18 @@ static inline int stm32x_get_flash_status(struct flash_bank *bank, uint32_t *sta
 	return target_read_u32(target, stm32x_get_flash_reg(bank, FLASH_SR), status);
 }
 
-static int stm32x_wait_status_busy(struct flash_bank *bank, int timeout)
+static int stm32x_wait_flash_op_queue(struct flash_bank *bank, int timeout)
 {
 	struct target *target = bank->target;
 	struct stm32h7x_flash_bank *stm32x_info = bank->driver_priv;
 	uint32_t status;
 	int retval;
 
-	/* wait for busy to clear */
+	/* wait for flash operations completion */
 	for (;;) {
 		retval = stm32x_get_flash_status(bank, &status);
 		if (retval != ERROR_OK) {
-			LOG_INFO("wait_status_busy, target_read_u32 : error : remote address 0x%x", stm32x_info->flash_base);
+			LOG_INFO("wait_flash_op_queue, target_read_u32 : error : remote address 0x%x", stm32x_info->flash_base);
 			return retval;
 		}
 
@@ -208,14 +208,14 @@ static int stm32x_wait_status_busy(struct flash_bank *bank, int timeout)
 			break;
 
 		if (timeout-- <= 0) {
-			LOG_INFO("wait_status_busy, time out expired, status: 0x%" PRIx32 "", status);
+			LOG_INFO("wait_flash_op_queue, time out expired, status: 0x%" PRIx32 "", status);
 			return ERROR_FAIL;
 		}
 		alive_sleep(1);
 	}
 
 	if (status & FLASH_WRPERR) {
-		LOG_INFO("wait_status_busy, WRPERR : error : remote address 0x%x", stm32x_info->flash_base);
+		LOG_INFO("wait_flash_op_queue, WRPERR : error : remote address 0x%x", stm32x_info->flash_base);
 		retval = ERROR_FAIL;
 	}
 
@@ -406,16 +406,16 @@ static int stm32x_write_options(struct flash_bank *bank)
 	int timeout = FLASH_ERASE_TIMEOUT;
 	for (;;) {
 		uint32_t status;
-		retval = target_read_u32(target, FLASH_REG_BASE_B0 + FLASH_OPTCUR, &status);
+		retval = target_read_u32(target, FLASH_REG_BASE_B0 + FLASH_SR, &status);
 		if (retval != ERROR_OK) {
-			LOG_INFO("stm32x_write_options: wait_status_busy : error");
+			LOG_INFO("stm32x_write_options: wait_flash_op_queue : error");
 			return retval;
 		}
-		if ((status & FLASH_BSY) == 0)
+		if ((status & FLASH_QW) == 0)
 			break;
 
 		if (timeout-- <= 0) {
-			LOG_INFO("wait_status_busy, time out expired, status: 0x%" PRIx32 "", status);
+			LOG_INFO("wait_flash_op_queue, time out expired, status: 0x%" PRIx32 "", status);
 			return ERROR_FAIL;
 		}
 		alive_sleep(1);
@@ -479,12 +479,12 @@ static int stm32x_erase(struct flash_bank *bank, int first, int last)
 	/*
 	Sector Erase
 	To erase a sector, follow the procedure below:
-	1. Check that no Flash memory operation is ongoing by checking the BSY bit in the
+	1. Check that no Flash memory operation is ongoing by checking the QW bit in the
 	  FLASH_SR register
 	2. Set the SER bit and select the sector
 	  you wish to erase (SNB) in the FLASH_CR register
 	3. Set the STRT bit in the FLASH_CR register
-	4. Wait for the BSY bit to be cleared
+	4. Wait for flash operations completion
 	 */
 	for (int i = first; i <= last; i++) {
 		LOG_DEBUG("erase sector %d", i);
@@ -500,7 +500,7 @@ static int stm32x_erase(struct flash_bank *bank, int first, int last)
 			LOG_ERROR("Error erase sector %d", i);
 			return retval;
 		}
-		retval = stm32x_wait_status_busy(bank, FLASH_ERASE_TIMEOUT);
+		retval = stm32x_wait_flash_op_queue(bank, FLASH_ERASE_TIMEOUT);
 
 		if (retval != ERROR_OK) {
 			LOG_ERROR("erase time-out or operation error sector %d", i);
@@ -576,15 +576,8 @@ static int stm32x_write_block(struct flash_bank *bank, const uint8_t *buffer,
 	struct stm32h7x_flash_bank *stm32x_info = bank->driver_priv;
 	int retval = ERROR_OK;
 
-	/* see contrib/loaders/flash/smt32h7x.S for src */
 	static const uint8_t stm32x_flash_write_code[] = {
-		0x45, 0x68, 0x06, 0x68, 0x46, 0xb3, 0x76, 0x1b, 0x42, 0xbf, 0x76, 0x18, 0x36, 0x1a, 0x08, 0x3e,
-		0x20, 0x2e, 0xf6, 0xd3, 0xdf, 0xf8, 0x48, 0x60, 0x66, 0x61, 0x10, 0x4e, 0xe6, 0x60, 0x4f, 0xf0,
-		0x08, 0x07, 0xbf, 0xf3, 0x4f, 0x8f, 0x55, 0xf8, 0x04, 0x6b, 0x42, 0xf8, 0x04, 0x6b, 0xbf, 0xf3,
-		0x4f, 0x8f, 0x8d, 0x42, 0x28, 0xbf, 0x00, 0xf1, 0x08, 0x05, 0x01, 0x3f, 0xf1, 0xd1, 0x26, 0x69,
-		0x16, 0xf0, 0x04, 0x0f, 0xfb, 0xd1, 0x06, 0x4f, 0x3e, 0x42, 0x03, 0xd1, 0x45, 0x60, 0x01, 0x3b,
-		0xd7, 0xd1, 0x01, 0xe0, 0x00, 0x27, 0x47, 0x60, 0x30, 0x46, 0x00, 0xbe, 0x32, 0x00, 0x00, 0x00,
-		0x00, 0x00, 0xee, 0x07
+#include "../../../contrib/loaders/flash/stm32/stm32h7x.inc"
 	};
 
 	if (target_alloc_working_area(target, sizeof(stm32x_flash_write_code),
@@ -714,13 +707,18 @@ static int stm32x_write(struct flash_bank *bank, const uint8_t *buffer,
 	/*
 	Standard programming
 	The Flash memory programming sequence is as follows:
-	1. Check that no main Flash memory operation is ongoing by checking the BSY bit in the
+	1. Check that no main Flash memory operation is ongoing by checking the QW bit in the
 	   FLASH_SR register.
 	2. Set the PG bit in the FLASH_CR register
 	3. 8 x Word access (or Force Write FW)
-	4. Wait for the BSY bit to be cleared
+	4. Wait for flash operations completion
 	*/
 	while (blocks_remaining > 0) {
+		/* Clear error flags */
+		retval = target_write_u32(target, stm32x_get_flash_reg(bank, FLASH_CCR), FLASH_ERROR);
+		if (retval != ERROR_OK)
+			return retval;
+
 		retval = target_write_u32(target, stm32x_get_flash_reg(bank, FLASH_CR), FLASH_PG | FLASH_PSIZE_64);
 		if (retval != ERROR_OK)
 			goto flash_lock;
@@ -729,7 +727,7 @@ static int stm32x_write(struct flash_bank *bank, const uint8_t *buffer,
 		if (retval != ERROR_OK)
 			goto flash_lock;
 
-		retval = stm32x_wait_status_busy(bank, FLASH_WRITE_TIMEOUT);
+		retval = stm32x_wait_flash_op_queue(bank, FLASH_WRITE_TIMEOUT);
 		if (retval != ERROR_OK)
 			goto flash_lock;
 
@@ -739,6 +737,11 @@ static int stm32x_write(struct flash_bank *bank, const uint8_t *buffer,
 	}
 
 	if (bytes_remaining) {
+		/* Clear error flags */
+		retval = target_write_u32(target, stm32x_get_flash_reg(bank, FLASH_CCR), FLASH_ERROR);
+		if (retval != ERROR_OK)
+			return retval;
+
 		retval = target_write_u32(target, stm32x_get_flash_reg(bank, FLASH_CR), FLASH_PG | FLASH_PSIZE_64);
 		if (retval != ERROR_OK)
 			goto flash_lock;
@@ -752,7 +755,7 @@ static int stm32x_write(struct flash_bank *bank, const uint8_t *buffer,
 		if (retval != ERROR_OK)
 			goto flash_lock;
 
-		retval = stm32x_wait_status_busy(bank, FLASH_WRITE_TIMEOUT);
+		retval = stm32x_wait_flash_op_queue(bank, FLASH_WRITE_TIMEOUT);
 		if (retval != ERROR_OK)
 			goto flash_lock;
 	}
@@ -823,12 +826,18 @@ static int stm32x_probe(struct flash_bank *bank)
 	stm32x_info->flash_base = stm32x_info->part_info->flash_base;
 
 	/* get flash size from target */
-	retval = target_read_u16(target, stm32x_info->part_info->fsize_base, &flash_size_in_kb);
-	if (retval != ERROR_OK) {
-		/* read error when device has invalid value, set max flash size */
+	/* only Cortex-M7 has access to this register */
+	if (target->coreid == 0) {
+		retval = target_read_u16(target, stm32x_info->part_info->fsize_base, &flash_size_in_kb);
+		if (retval != ERROR_OK) {
+			/* read error when device has invalid value, set max flash size */
+			flash_size_in_kb = stm32x_info->part_info->max_flash_size_kb;
+		}
+		else
+			LOG_INFO("flash size probed value %d", flash_size_in_kb);
+	} else {
 		flash_size_in_kb = stm32x_info->part_info->max_flash_size_kb;
-	} else
-		LOG_INFO("flash size probed value %d", flash_size_in_kb);
+	}
 
 	/* Lower flash size devices are single bank */
 	if (stm32x_info->part_info->has_dual_bank && (flash_size_in_kb > stm32x_info->part_info->first_bank_size_kb)) {
@@ -1055,6 +1064,11 @@ static int stm32x_mass_erase(struct flash_bank *bank)
 	if (retval != ERROR_OK)
 		return retval;
 
+	/* Clear error flags */
+	retval = target_write_u32(target, stm32x_get_flash_reg(bank, FLASH_CCR), FLASH_ERROR);
+	if (retval != ERROR_OK)
+		return retval;
+
 	/* mass erase flash memory bank */
 	retval = target_write_u32(target, stm32x_get_flash_reg(bank, FLASH_CR), FLASH_BER_CMD | FLASH_PSIZE_64);
 	if (retval != ERROR_OK)
@@ -1065,7 +1079,7 @@ static int stm32x_mass_erase(struct flash_bank *bank)
 	if (retval != ERROR_OK)
 		return retval;
 
-	retval = stm32x_wait_status_busy(bank, 30000);
+	retval = stm32x_wait_flash_op_queue(bank, 30000);
 	if (retval != ERROR_OK)
 		return retval;
 
