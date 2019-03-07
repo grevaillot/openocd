@@ -171,11 +171,11 @@ static const struct stm32l4x_rev stm32_415_revs[] = {
 };
 
 static const struct stm32l4x_rev stm32_435_revs[] = {
-	{ 0x1000, "A" }, { 0x1001, "Z" },
+	{ 0x1000, "A" }, { 0x1001, "Z" }, { 0x2001, "Y" },
 };
 
 static const struct stm32l4x_rev stm32_462_revs[] = {
-	{ 0x1000, "A" }, { 0x2000, "B" },
+	{ 0x1000, "A" }, { 0x2000, "B" }, { 0x2001, "Y" },
 };
 
 static const struct stm32l4x_rev stm32_461_revs[] = {
@@ -187,7 +187,7 @@ static const struct stm32l4x_rev stm32_495_revs[] = {
 };
 
 static const struct stm32l4x_rev stm32_470_revs[] = {
-	{ 0x1000, "A" }, { 0x1001, "Z" },
+	{ 0x1000, "A" }, { 0x1001, "Z" }, { 0x1003, "Y" }, { 0x100F, "W" },
 };
 
 static const struct stm32l4x_rev stm32_464_revs[] = {
@@ -195,7 +195,19 @@ static const struct stm32l4x_rev stm32_464_revs[] = {
 };
 
 static const struct stm32l4x_rev stm32_460_revs[] = {
+	{ 0x1000, "A" }, { 0x2000, "B" },
+};
+
+static const struct stm32l4x_rev stm32_466_revs[] = {
 	{ 0x1000, "A" },
+};
+
+static const struct stm32l4x_rev stm32_468_revs[] = {
+	{ 0x1000, "A" }, { 0x2000, "B" }, { 0x2001, "Z" },
+};
+
+static const struct stm32l4x_rev stm32_469_revs[] = {
+	{ 0x1000, "A" }, { 0x2000, "B" }, { 0x2001, "Z" },
 };
 
 static struct stm32l4x_part_info stm32l4x_parts[] = {
@@ -299,6 +311,45 @@ static struct stm32l4x_part_info stm32l4x_parts[] = {
 	  .max_flash_size_kb	= 128,
 	  .has_dual_bank		= 0,
 	  .first_bank_sectors	= 64,
+	  .hole_sectors			= 0,
+	  .flash_base			= 0x40022000,
+	  .fsize_base			= 0x1FFF75E0,
+	},
+	{
+	  .id					= 0x466,
+	  .revs					= stm32_466_revs,
+	  .num_revs				= ARRAY_SIZE(stm32_466_revs),
+	  .device_str			= "STM32G03/G04xx", /* 64K */
+	  .page_size			= 2048,
+	  .max_flash_size_kb	= 64,
+	  .has_dual_bank		= 0,
+	  .first_bank_sectors	= 32,
+	  .hole_sectors			= 0,
+	  .flash_base			= 0x40022000,
+	  .fsize_base			= 0x1FFF75E0,
+	},
+	{
+	  .id					= 0x468,
+	  .revs					= stm32_468_revs,
+	  .num_revs				= ARRAY_SIZE(stm32_468_revs),
+	  .device_str			= "STM32G43/G44xx", /* 128K */
+	  .page_size			= 2048,
+	  .max_flash_size_kb	= 128,
+	  .has_dual_bank		= 0,
+	  .first_bank_sectors	= 64,
+	  .hole_sectors			= 0,
+	  .flash_base			= 0x40022000,
+	  .fsize_base			= 0x1FFF75E0,
+	},
+	{
+	  .id					= 0x469,
+	  .revs					= stm32_469_revs,
+	  .num_revs				= ARRAY_SIZE(stm32_469_revs),
+	  .device_str			= "STM32G47/G48xx", /* 512K */
+	  .page_size			= 2048, /* or 4096, depending on DBANK option bit */
+	  .max_flash_size_kb	= 512,
+	  .has_dual_bank		= 1,
+	  .first_bank_sectors	= 128,
 	  .hole_sectors			= 0,
 	  .flash_base			= 0x40022000,
 	  .fsize_base			= 0x1FFF75E0,
@@ -829,7 +880,7 @@ static int stm32x_write_block(struct flash_bank *bank, const uint8_t *buffer,
 
 	init_reg_param(&reg_params[0], "r0", 32, PARAM_IN_OUT);		/* buffer start, status (out) */
 	init_reg_param(&reg_params[1], "r1", 32, PARAM_OUT);		/* buffer end */
-	init_reg_param(&reg_params[2], "r2", 32, PARAM_OUT);		/* target address  */
+	init_reg_param(&reg_params[2], "r2", 32, PARAM_OUT);		/* target address */
 	init_reg_param(&reg_params[3], "r3", 32, PARAM_OUT);		/* count (word-64bit) */
 	init_reg_param(&reg_params[4], "r4", 32, PARAM_OUT);		/* flash_reg addr */
 
@@ -918,8 +969,6 @@ static int stm32x_write(struct flash_bank *bank, const uint8_t *buffer,
 		return retval;
 	}
 
-	LOG_INFO("block write succeeded");
-
 	return target_write_u32(target, stm32x_info->flash_base + FLASH_CR, FLASH_LOCK);
 }
 
@@ -964,7 +1013,7 @@ static int stm32x_probe(struct flash_bank *bank)
 	}
 
 	if (!stm32x_info->part_info) {
-		LOG_WARNING("Cannot identify target as a STM32L4xx or STM32G0xx family.");
+		LOG_WARNING("Cannot identify target as a STM32L4xx or STM32G0xx or STM32WBxx or STM32G4xx family.");
 		return ERROR_FAIL;
 	}
 
@@ -981,12 +1030,19 @@ static int stm32x_probe(struct flash_bank *bank)
 	if (stm32x_info->part_info->has_dual_bank) {
 		/* get options for DUAL BANK */
 		retval = target_read_u32(target, stm32x_info->flash_base + FLASH_OPTR, &options);
+		if (retval != ERROR_OK)
+			return retval;
+		/* test DBANK option (Default Dual bank page_size = 2048) */
+		if (((device_id & 0xfff) == 0x469) && ((options & DBANK) == 0)) {
+			stm32x_info->part_info->page_size = 4096; /* Single bank */
+		}
 		/* test DBANK option (Default Dual bank page_size = 4096) */
-		if (((device_id & 0xfff) == 0x470) && ((options & DBANK) == 0)) {
+		else if (((device_id & 0xfff) == 0x470) && ((options & DBANK) == 0)) {
 			stm32x_info->part_info->page_size = 8192; /* Single bank */
 		}
 		/* test if dual bank on a smaller device (hole between banks for sector erase) */
-		else if ((options & DUALBANK) && (flash_size_in_kb < stm32x_info->part_info->max_flash_size_kb)) {
+		else if (((device_id & 0xfff) != 0x469) && (options & DUALBANK) && 
+				(flash_size_in_kb < stm32x_info->part_info->max_flash_size_kb)) {
 			stm32x_info->part_info->first_bank_sectors = \
 						((flash_size_in_kb * 1024) / stm32x_info->part_info->page_size)/2;
 			stm32x_info->part_info->hole_sectors = \
@@ -1075,7 +1131,7 @@ static int get_stm32x_info(struct flash_bank *bank, char *buf, int buf_size)
 				stm32x_info->part_info->device_str, rev_id);
 		return ERROR_OK;
 	} else {
-		snprintf(buf, buf_size, "Cannot identify target as a STM32L4x or STM32G0x");
+		snprintf(buf, buf_size, "Cannot identify target as a STM32L4x or STM32G0x or STM32WBx or STM32G4x");
 		return ERROR_FAIL;
 	}
 	return ERROR_OK;
